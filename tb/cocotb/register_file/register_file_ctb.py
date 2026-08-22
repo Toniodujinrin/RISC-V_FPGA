@@ -75,7 +75,11 @@ class RF_Monitor:
     async def _run(self):
         await self.start_event.wait()
         while True:
-            await RisingEdge(self.dut.clk)
+            # sample mid-cycle, before the write edge. read_data is combinational
+            # and always@(*) is sensitive to the whole file array, so sampling in
+            # ReadOnly after the rising edge would show this cycle's write -- which
+            # is not what a pipeline register latching read_data at that edge sees.
+            await FallingEdge(self.dut.clk)
             await ReadOnly() 
             tr = Transaction_Output(int(self.dut.read_data_1.value.signed_integer), int(self.dut.read_data_2.value.signed_integer))              
             self.queue.put_nowait(tr)
@@ -120,7 +124,7 @@ class Golden_Model:
         return self.file[addr] 
 
     def write(self,addr, data, write_en):
-        if(write_en):
+        if(write_en and addr != 0):
             self.file[addr] = data
     
     def perform_transaction(self, tr: Transaction_Input) -> Transaction_Output: 
@@ -143,16 +147,12 @@ async def setup(dut,settings):
     golden_queue, dut_queue = Queue(), Queue()
     start_event = Event() 
     cocotb.start_soon(Clock(dut.clk, 1, unit="ns").start())
-    dut.reset.value = 1
     rng = np.random.default_rng(seed=42)
 
     program = make_program(rng,settings)
     monitor = RF_Monitor(dut,dut_queue,start_event)
     scoreboard = RF_Scoreboard(golden_queue,dut_queue)
 
-    for _ in range(2):
-        await RisingEdge(dut.clk)
-    dut.reset.value = 0
 
     return scoreboard, start_event, program, golden_queue
 
@@ -176,7 +176,7 @@ async def finish(dut, sb, expected):
 
 @cocotb.test()
 async def test_random(dut):
-    settings = Settings(3,32,100)
+    settings = Settings(5,32,100)
     scoreboard, start_event, program, golden_queue = await setup(dut,settings)
     await drive_program(dut,settings,program,golden_queue,start_event)
     await finish(dut, scoreboard, len(program))

@@ -1,5 +1,6 @@
 SIM ?= icarus
 TOPLEVEL_LANG ?= verilog 
+WAVES ?= 1
 export PYTHONPATH := $(PWD)/..:$(PYTHONPATH)
 VERILOG_SOURCES += $(PWD)/../../../rtl/register_file.v 
 

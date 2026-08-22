@@ -1,3 +1,5 @@
+`include "riscv_defs.vh"
+
 module instruction_decoder
 #(
   parameter DATA_WIDTH = 32
@@ -13,15 +15,6 @@ module instruction_decoder
   output reg [4:0] rd
 ); 
 
-  localparam R_TYPE = 5'b01100; 
-  localparam I_TYPE_1 = 5'b11100; 
-  localparam I_TYPE_2 = 5'b11001; 
-  localparam I_TYPE_3 = 5'b00000; 
-  localparam I_TYPE_4 = 5'b00100; 
-  localparam S_TYPE = 5'b01000; 
-  localparam B_TYPE = 5'b11000; 
-  localparam J_TYPE = 5'b11011; 
-  localparam U_TYPE = 5'b01101; 
 
   always@(*)
   begin
@@ -34,7 +27,7 @@ module instruction_decoder
     rd = 0; 
 
     case(inst_in[6:2])
-      R_TYPE: 
+      `R_TYPE: 
       begin 
         op_code = inst_in[6:0]; 
         rd = inst_in[11:7]; 
@@ -44,7 +37,7 @@ module instruction_decoder
         funct_7 = inst_in[31:25]; 
       end 
 
-      I_TYPE_1, I_TYPE_2, I_TYPE_3, I_TYPE_4: 
+      `I_TYPE_1, `I_TYPE_2, `I_TYPE_3, `I_TYPE_4: 
       begin 
         op_code = inst_in[6:0];
         rd = inst_in[11:7]; 
@@ -53,7 +46,7 @@ module instruction_decoder
         imm = {{20{inst_in[31]}}, inst_in[31:20]}; 
       end 
 
-      S_TYPE:
+      `S_TYPE:
       begin 
         op_code = inst_in[6:0]; 
         funct_3 = inst_in[14:12];
@@ -62,7 +55,7 @@ module instruction_decoder
         imm = {{20{inst_in[31]}}, inst_in[31:25], inst_in[11:7]};
       end 
 
-      B_TYPE: 
+      `B_TYPE: 
       begin 
          op_code = inst_in[6:0]; 
          funct_3 = inst_in[14:12];
@@ -71,19 +64,26 @@ module instruction_decoder
          imm = {{20{inst_in[31]}}, inst_in[7], inst_in[30:25], inst_in[11:8], 1'b0};
       end 
 
-      J_TYPE: 
+      `J_TYPE: 
       begin 
          op_code = inst_in[6:0]; 
          rd = inst_in[11:7]; 
          imm = {{12{inst_in[31]}}, inst_in[19:12], inst_in[20], inst_in[30:21], 1'b0}; 
       end 
 
-      U_TYPE: 
+      `U_TYPE_1: 
       begin 
          op_code = inst_in[6:0]; 
          rd = inst_in[11:7]; 
          imm = {inst_in[31:12], 12'b0}; 
       end 
+
+      `U_TYPE_2: 
+      begin 
+         op_code = inst_in[6:0]; 
+         rd = inst_in[11:7]; 
+         imm = {inst_in[31:12], 12'b0}; 
+      end
     endcase
   end 
 endmodule

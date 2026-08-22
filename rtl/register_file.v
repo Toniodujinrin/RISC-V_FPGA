@@ -1,10 +1,11 @@
 module register_file
 #(
+  parameter
   DATA_WIDTH = 32, 
   ADDR_WIDTH = 5
 )
 (
-  input clk, reset, 
+  input clk, 
   input write_en, 
   input [ADDR_WIDTH-1:0] read_addr_1, 
   input [ADDR_WIDTH-1:0] read_addr_2, 
@@ -16,37 +17,27 @@ module register_file
   localparam N_REGS = 1 << ADDR_WIDTH; 
   (* ramstyle = "logic" *) reg [DATA_WIDTH-1:0] file [0:N_REGS-1];
 
-  always@(posedge clk, posedge reset)
+  //sequential write. x0 is hardwired, so writes to it are dropped.
+  always@(posedge clk)
   begin 
-    if(reset)
-    begin 
-      read_data_1 <= 0; 
-      read_data_2 <= 0; 
-    end 
-    else 
-    begin 
-      if(write_en)
-      begin 
-        file[write_addr] <= write_data; 
-      end 
-
-      read_data_1 <= file[read_addr_1]; 
-      read_data_2 <= file[read_addr_2]; 
-    end 
+    if(write_en && write_addr != {ADDR_WIDTH{1'b0}})
+      file[write_addr] <= write_data; 
   end 
+  
+  //combinational read. x0 always reads zero.
+  always@(*)
+  begin 
+    read_data_1 = (read_addr_1 == {ADDR_WIDTH{1'b0}})? {DATA_WIDTH{1'b0}} : file[read_addr_1]; 
+    read_data_2 = (read_addr_2 == {ADDR_WIDTH{1'b0}})? {DATA_WIDTH{1'b0}} : file[read_addr_2]; 
+  end
 
-  //set all initial values to 0 
+  //power-up state. the array itself is never reset: ramstyle="logic" infers
+  //distributed RAM, which has no reset port.
   integer i; 
-  initial
+  initial 
   begin 
     for(i = 0; i < N_REGS; i = i+1)
       file[i] = 0; 
-  end 
-
-
-  initial 
-  begin 
-    $dumpfile("register_file_dump.vcd"); 
-    $dumpvars(0,register_file); 
   end
+
 endmodule 

@@ -38,8 +38,8 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 | `rtl/alu.v` | 57 | ✅ | **Done 22 Aug** — lints clean under `-Wall`. See [B1](#b1--aluv) |
 | `rtl/alu_controller.v` | 100 | ✅ | **Done 22 Aug** — 2 TODOs left in-file. See [B2](#b2--alu_controllerv) |
 | `rtl/branch_predictor.v` | 124 | ✅ | **Done 22 Aug** — gshare, lints to 1 benign warning. See [B3](#b3--branch_predictorv) |
-| `rtl/register_file.v` | 52 | ✅ | 8 regs, no `x0` hardwire. See [B4](#b4--register_filev) |
-| `rtl/forwarding_unit.v` | 39 | ✅ | Logic is right; width is wrong. See [B5](#b5--forwarding_unitv) |
+| `rtl/register_file.v` | 45 | ✅ | **Done 22 Aug** — 32 regs, `x0` hardwired, cocotb 100/100. See [B4](#b4--register_filev) |
+| `rtl/forwarding_unit.v` | 40 | ✅ | **Done 22 Aug** — lints clean. See [B5](#b5--forwarding_unitv) |
 | `rtl/instruction_decoder.v` | 89 | ✅ | Missing AUIPC + shift-imm `funct_7`. See [B6](#b6--instruction_decoderv) |
 | `rtl/l1.v` | 894 | ✅ | 4-way cache + WB FIFO + arbiter. Standalone TB exists |
 | `rtl/control.v` | 0 | — | **empty** |
@@ -90,10 +90,19 @@ The one deviation I'd make from the paper's order: **do the pipeline before CSR/
   Add a `Makefile` at the root with `make lint`, `make test` (runs every cocotb suite), `make wave`. A 30-minute investment that pays back by Sunday afternoon.
 - [x] ~~**Fix `alu.v` and `alu_controller.v`**~~ — [B1](#b1--aluv), [B2](#b2--alu_controllerv) done 22 Aug. Both compile under `-g2001` and `-g2012`; `alu.v` lints clean under `verilator -Wall`.
 - [x] ~~**Fix `branch_predictor.v`**~~ — [B3](#b3--branch_predictorv) done 22 Aug. All 7 syntax defects closed, plus the PHT index mismatch that would have stopped it learning at all.
-- [ ] **Fix the widths** — [B4](#b4--register_filev), [B5](#b5--forwarding_unitv). `ADDR_WIDTH = 3` gives you 8 registers; RV32I has 32.
+- [x] ~~**Fix the widths**~~ — [B4](#b4--register_filev), [B5](#b5--forwarding_unitv) done 22 Aug. Both at `ADDR_WIDTH = 5`, both lint clean, `x0` hardwired and verified by cocotb.
 - [ ] Commit after each module. Small commits are your bisect trail.
 
 **Exit criteria:** `make lint` is clean across all of `rtl/`, every non-empty module compiles, cocotb passes on `register_file` and `alu`.
+
+### Testbench gotchas — learned the hard way on `register_file`, 22 Aug
+
+Reusable for every cocotb monitor you write from here (core, cache, predictor):
+
+- **Sample combinational outputs mid-cycle, not after the clock edge.** `await RisingEdge(clk)` then `await ReadOnly()` lands in the *postponed* region, after NBA updates and any combinational re-evaluation they trigger. For a combinational read off a memory that gets written on that same edge, this shows you the post-write value — which no real consumer sees, because a pipeline register doing `q <= d` samples in the active region and gets the pre-write value. Use `FallingEdge(clk)` + `ReadOnly()` instead. This cost an hour and produced 22 phantom mismatches.
+- **`always @(*)` on `mem[addr]` is sensitive to the whole array**, not just `addr`. That is why the write is visible to the read in the same timestep at all.
+- **Waves belong in the Makefile, not the RTL.** `WAVES ?= 1` makes cocotb build its own dump module and write FST to `sim_build/`. `$dumpfile` in an RTL module collides as soon as a second testbench opens its own file, and only one can win.
+- **A golden model that reads-then-writes is correct for this design.** Don't reorder it to chase a mismatch — check the sampling point first.
 
 ---
 
@@ -145,7 +154,8 @@ The riskiest day. Budget the whole day; do not add CSRs today no matter how well
 - [ ] **`rtl/hazard_detector.v`** — the empty file. Two jobs:
   - **Load-use stall:** `ID/EX.MemRead && (ID/EX.rd == IF/ID.rs1 || ID/EX.rd == IF/ID.rs2)` → stall IF/ID, bubble ID/EX. Forwarding cannot fix this one; the data doesn't exist yet.
   - **Control flush:** on a taken/mispredicted branch resolved in EX, flush `IF/ID` and `ID/EX`.
-- [ ] **Register file write-first behaviour** — [B4](#b4--register_filev). In a 5-stage pipeline, a WB in cycle N must be visible to an ID read in cycle N. Your current registered read returns the stale value and no forwarding path covers it. Standard fix: write on `negedge`, or combinationally bypass `write_data` when `write_addr == read_addr && write_en`.
+- [ ] **Register file write-first behaviour** — [B4](#b4--register_filev), the one item still open on that module. Reads are combinational as of 22 Aug, but a WB write landing at the end of cycle N is still invisible to an ID read *during* cycle N, and forwarding only covers producers one and two instructions ahead. A distance-3 RAW therefore reads stale. Fix: write on `negedge clk`.
+  - **The `register_file` cocotb suite cannot catch this.** It samples mid-cycle, before the write edge, which is exactly the behaviour that hides the bug. `hazard.S` is what has to catch it — make sure that test includes a dependency at distance 3, not just 1 and 2.
 - [ ] **Static prediction first.** Predict not-taken, resolve in EX, flush on mispredict. Get the pipeline *correct* before making it *fast* — the dynamic predictor is a Monday feature and it can only change performance, never correctness. If it changes correctness, your flush logic is broken.
 - [ ] Re-run all 7 test programs **unpadded**. Add `hazard.S`: back-to-back dependent ALU ops, load-immediately-followed-by-use, branch on a just-computed value, store of a just-loaded value.
 
@@ -296,17 +306,30 @@ Nothing outstanding in this file.
 - **Pipeline cost:** each in-flight branch must now carry 7 bits of `prediction_index` plus 2 bits of `prediction_out` plus `$clog2(BHR_SNAPS)` bits of snapshot index. Size `IF/ID` and `ID/EX` accordingly.
 
 ### B4 — `register_file.v`
-| | Issue | Fix |
+
+**✅ Three of four resolved 22 Aug.** Verified by the cocotb suite at 100/100.
+
+| | Issue | Resolution |
 |---|---|---|
-| 1 | `ADDR_WIDTH = 3` → **8 registers**. RV32I has 32. | `ADDR_WIDTH = 5` |
-| 2 | `x0` is a normal writable register. Anything writing `x0` corrupts the zero constant. | force reads of addr 0 to `32'd0`, ignore writes to it |
-| 3 | Registered read with no write-first bypass. In a 5-stage pipeline the ID read must see the same-cycle WB write. | negedge write, or combinational bypass |
-| 4 | `$dumpfile`/`$dumpvars` live inside the RTL | move to the testbench |
+| 1 | `ADDR_WIDTH = 3` → 8 registers; RV32I has 32 | now `ADDR_WIDTH = 5` |
+| 2 | `x0` was a normal writable register, so `addi x0,x0,0` (the canonical NOP) corrupted the zero constant | writes to addr 0 dropped, reads of addr 0 forced to zero |
+| 3 | Registered read with no write-first bypass | read is now combinational; **bypass still outstanding**, see Day 2 |
+| 4 | `$dumpfile`/`$dumpvars` inside the RTL | removed; waves now come from `WAVES ?= 1` in the cocotb Makefile, written to `sim_build/register_file.fst` |
+
+Two changes made along the way that aren't in the original defect list:
+
+- **`file <= 0` in the reset branch didn't elaborate** — you can't assign a scalar to an unpacked array in Verilog-2001, and iverilog doesn't support it in `-g2012` either. The array now has no reset at all and takes its power-up state from an `initial` loop, which is what `ramstyle = "logic"` wants: distributed RAM has no reset port, and forcing one would infer 1,024 flip-flops instead.
+- **The `reset` port is gone**, since nothing used it any more.
+
+**Read style is settled: combinational read, `ID/EX` registers the operands.** This is the conventional structure and matches the paper's diagram. The consequence to hold onto is that the register file is now a plain memory, *not* a memory plus a pipeline stage — so `ID/EX` must latch `read_data_1/2`, and there is no hidden extra cycle in the operand path.
 
 ### B5 — `forwarding_unit.v`
-`ADDR_WIDTH = 3` → same 8-register problem, must be 5. Otherwise the logic is correct: EX/MEM is checked before MEM/WB, which is the right priority for the double-hazard case, and both paths correctly suppress forwarding from `x0`.
 
-One gap for later: a `SW` whose store-data comes from an immediately preceding `LW` needs a MEM→MEM forward that this unit doesn't provide. Add `mem_forward` once loads and stores are both working.
+**✅ Resolved 22 Aug.** `ADDR_WIDTH = 5`, `parameter` keyword added, lints clean at `-Wall`. The logic was always correct: EX/MEM is tested before MEM/WB, which is the right priority for the double-hazard case, and both paths suppress forwarding from `x0`.
+
+One gap for Day 2: a `SW` whose store-data comes from an immediately preceding `LW` needs a MEM→MEM forward this unit doesn't provide. Add `mem_forward` once loads and stores are both working.
+
+Note the division of labour with [B4](#b4--register_filev) — this unit's `RD != 0` checks stop a stale *forward* of `x0`, but they never stopped a write to `x0` landing in the file. That required the register file's own hardwiring. Two separate guards; both are needed.
 
 ### B6 — `instruction_decoder.v`
 | | Issue | Fix |

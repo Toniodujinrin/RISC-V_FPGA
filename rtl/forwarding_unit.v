@@ -1,5 +1,6 @@
 module forwarding_unit
 #(
+  parameter 
   ADDR_WIDTH = 5
 )
 (
