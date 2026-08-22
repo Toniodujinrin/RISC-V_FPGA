@@ -1,0 +1,6 @@
+<testsuites name="results">
+  <testsuite name="all" package="all">
+    <property name="random_seed" value="1786743481" />
+    <testcase name="test_random" classname="register_file_ctb" file="/home/toni/Desktop/RISC-V_FPGA/tb/cocotb/register_file/register_file_ctb.py" lineno="177" time="0.058306217193603516" sim_time_ns="102.0" ratio_time="1749.3846267082117" />
+  </testsuite>
+</testsuites>

@@ -1,0 +1,1105 @@
+read_addr_1:0, read_addr_2:6,                 write_addr:2, write_en:1, write_data:-574393735
+read_addr_1:6, read_addr_2:1,                 write_addr:6, write_en:1, write_data:1754840704
+read_addr_1:5, read_addr_2:6,                 write_addr:0, write_en:0, write_data:-21192835
+read_addr_1:3, read_addr_2:0,                 write_addr:7, write_en:1, write_data:857735608
+read_addr_1:3, read_addr_2:6,                 write_addr:4, write_en:0, write_data:-182890504
+read_addr_1:6, read_addr_2:6,                 write_addr:1, write_en:1, write_data:-1005580859
+read_addr_1:0, read_addr_2:6,                 write_addr:2, write_en:0, write_data:1134856859
+read_addr_1:5, read_addr_2:5,                 write_addr:4, write_en:0, write_data:2015097196
+read_addr_1:1, read_addr_2:3,                 write_addr:2, write_en:1, write_data:-1015652990
+read_addr_1:0, read_addr_2:5,                 write_addr:0, write_en:0, write_data:1197226016
+read_addr_1:4, read_addr_2:2,                 write_addr:5, write_en:0, write_data:-1025895884
+read_addr_1:7, read_addr_2:6,                 write_addr:5, write_en:0, write_data:931536269
+read_addr_1:5, read_addr_2:4,                 write_addr:0, write_en:0, write_data:1241273733
+read_addr_1:6, read_addr_2:3,                 write_addr:2, write_en:0, write_data:-217490693
+read_addr_1:5, read_addr_2:4,                 write_addr:1, write_en:0, write_data:1017561928
+read_addr_1:6, read_addr_2:4,                 write_addr:5, write_en:1, write_data:-978215044
+read_addr_1:4, read_addr_2:0,                 write_addr:5, write_en:1, write_data:-1807092397
+read_addr_1:1, read_addr_2:1,                 write_addr:5, write_en:0, write_data:-1733487618
+read_addr_1:6, read_addr_2:1,                 write_addr:7, write_en:0, write_data:-227531392
+read_addr_1:3, read_addr_2:0,                 write_addr:6, write_en:1, write_data:1729164126
+read_addr_1:4, read_addr_2:3,                 write_addr:2, write_en:1, write_data:-1599545251
+read_addr_1:2, read_addr_2:5,                 write_addr:0, write_en:1, write_data:-189939389
+read_addr_1:1, read_addr_2:5,                 write_addr:4, write_en:1, write_data:876311027
+read_addr_1:7, read_addr_2:3,                 write_addr:7, write_en:1, write_data:-1278339615
+read_addr_1:6, read_addr_2:6,                 write_addr:7, write_en:0, write_data:951835184
+read_addr_1:5, read_addr_2:4,                 write_addr:1, write_en:0, write_data:-833409954
+read_addr_1:3, read_addr_2:0,                 write_addr:1, write_en:1, write_data:1325687812
+read_addr_1:6, read_addr_2:6,                 write_addr:0, write_en:1, write_data:340245457
+read_addr_1:4, read_addr_2:4,                 write_addr:1, write_en:0, write_data:201465201
+read_addr_1:3, read_addr_2:5,                 write_addr:4, write_en:1, write_data:-1388250327
+read_addr_1:3, read_addr_2:4,                 write_addr:4, write_en:0, write_data:-158029417
+read_addr_1:1, read_addr_2:4,                 write_addr:2, write_en:1, write_data:1531646687
+read_addr_1:0, read_addr_2:0,                 write_addr:2, write_en:1, write_data:-2063628741
+read_addr_1:4, read_addr_2:4,                 write_addr:6, write_en:0, write_data:1110332926
+read_addr_1:7, read_addr_2:6,                 write_addr:3, write_en:0, write_data:-31085291
+read_addr_1:0, read_addr_2:2,                 write_addr:6, write_en:0, write_data:942586218
+read_addr_1:6, read_addr_2:4,                 write_addr:7, write_en:1, write_data:701359625
+read_addr_1:6, read_addr_2:0,                 write_addr:2, write_en:1, write_data:-291658174
+read_addr_1:2, read_addr_2:2,                 write_addr:1, write_en:0, write_data:-821768116
+read_addr_1:5, read_addr_2:3,                 write_addr:7, write_en:0, write_data:546787307
+read_addr_1:1, read_addr_2:7,                 write_addr:5, write_en:1, write_data:-1545224993
+read_addr_1:6, read_addr_2:1,                 write_addr:2, write_en:0, write_data:361198026
+read_addr_1:5, read_addr_2:2,                 write_addr:4, write_en:0, write_data:-1740773041
+read_addr_1:2, read_addr_2:3,                 write_addr:4, write_en:0, write_data:643586253
+read_addr_1:0, read_addr_2:7,                 write_addr:7, write_en:1, write_data:552956797
+read_addr_1:7, read_addr_2:6,                 write_addr:2, write_en:1, write_data:-1784798051
+read_addr_1:3, read_addr_2:0,                 write_addr:7, write_en:0, write_data:1105902091
+read_addr_1:7, read_addr_2:1,                 write_addr:7, write_en:1, write_data:-361604455
+read_addr_1:5, read_addr_2:6,                 write_addr:1, write_en:1, write_data:1232167954
+read_addr_1:6, read_addr_2:0,                 write_addr:1, write_en:0, write_data:-1968752133
+read_addr_1:6, read_addr_2:6,                 write_addr:4, write_en:1, write_data:-1376723856
+read_addr_1:1, read_addr_2:2,                 write_addr:0, write_en:1, write_data:-25809235
+read_addr_1:2, read_addr_2:7,                 write_addr:2, write_en:0, write_data:-1339062690
+read_addr_1:3, read_addr_2:2,                 write_addr:3, write_en:0, write_data:-730740529
+read_addr_1:3, read_addr_2:3,                 write_addr:7, write_en:1, write_data:689767640
+read_addr_1:0, read_addr_2:5,                 write_addr:7, write_en:1, write_data:-1526756984
+read_addr_1:4, read_addr_2:1,                 write_addr:1, write_en:0, write_data:763228321
+read_addr_1:1, read_addr_2:4,                 write_addr:7, write_en:1, write_data:-1703371284
+read_addr_1:5, read_addr_2:4,                 write_addr:0, write_en:1, write_data:-1395069033
+read_addr_1:5, read_addr_2:6,                 write_addr:5, write_en:0, write_data:376430571
+read_addr_1:7, read_addr_2:7,                 write_addr:6, write_en:1, write_data:1260500895
+read_addr_1:5, read_addr_2:5,                 write_addr:7, write_en:0, write_data:-1414792428
+read_addr_1:2, read_addr_2:3,                 write_addr:1, write_en:1, write_data:-859024422
+read_addr_1:7, read_addr_2:3,                 write_addr:7, write_en:0, write_data:1825877005
+read_addr_1:3, read_addr_2:3,                 write_addr:0, write_en:0, write_data:2103175438
+read_addr_1:2, read_addr_2:6,                 write_addr:4, write_en:1, write_data:348154943
+read_addr_1:7, read_addr_2:2,                 write_addr:3, write_en:0, write_data:-227469406
+read_addr_1:2, read_addr_2:1,                 write_addr:2, write_en:1, write_data:-657689182
+read_addr_1:0, read_addr_2:2,                 write_addr:0, write_en:0, write_data:482977317
+read_addr_1:3, read_addr_2:0,                 write_addr:6, write_en:1, write_data:390479062
+read_addr_1:6, read_addr_2:0,                 write_addr:2, write_en:1, write_data:-881529007
+read_addr_1:1, read_addr_2:0,                 write_addr:5, write_en:1, write_data:-2049541768
+read_addr_1:3, read_addr_2:6,                 write_addr:3, write_en:0, write_data:-1496803375
+read_addr_1:1, read_addr_2:5,                 write_addr:2, write_en:0, write_data:1969496824
+read_addr_1:5, read_addr_2:5,                 write_addr:7, write_en:1, write_data:-351521972
+read_addr_1:3, read_addr_2:3,                 write_addr:0, write_en:1, write_data:-76006160
+read_addr_1:2, read_addr_2:5,                 write_addr:5, write_en:1, write_data:-141271986
+read_addr_1:1, read_addr_2:1,                 write_addr:5, write_en:0, write_data:1214338554
+read_addr_1:4, read_addr_2:7,                 write_addr:3, write_en:1, write_data:-1868497320
+read_addr_1:5, read_addr_2:4,                 write_addr:2, write_en:0, write_data:-1792161004
+read_addr_1:7, read_addr_2:7,                 write_addr:0, write_en:0, write_data:-962728748
+read_addr_1:3, read_addr_2:1,                 write_addr:7, write_en:1, write_data:-57302033
+read_addr_1:1, read_addr_2:3,                 write_addr:7, write_en:0, write_data:734972155
+read_addr_1:6, read_addr_2:5,                 write_addr:1, write_en:1, write_data:-39913156
+read_addr_1:5, read_addr_2:3,                 write_addr:0, write_en:0, write_data:-252681184
+read_addr_1:5, read_addr_2:3,                 write_addr:0, write_en:0, write_data:1880450305
+read_addr_1:0, read_addr_2:1,                 write_addr:0, write_en:0, write_data:-1455912549
+read_addr_1:2, read_addr_2:3,                 write_addr:6, write_en:1, write_data:308069639
+read_addr_1:6, read_addr_2:1,                 write_addr:7, write_en:1, write_data:181439472
+read_addr_1:6, read_addr_2:2,                 write_addr:1, write_en:1, write_data:-113862156
+read_addr_1:3, read_addr_2:5,                 write_addr:5, write_en:1, write_data:1321120954
+read_addr_1:6, read_addr_2:5,                 write_addr:1, write_en:1, write_data:-1000831907
+read_addr_1:6, read_addr_2:4,                 write_addr:2, write_en:1, write_data:1948939605
+read_addr_1:3, read_addr_2:2,                 write_addr:4, write_en:1, write_data:-723405649
+read_addr_1:7, read_addr_2:7,                 write_addr:5, write_en:0, write_data:193292775
+read_addr_1:2, read_addr_2:0,                 write_addr:6, write_en:0, write_data:88787292
+read_addr_1:1, read_addr_2:2,                 write_addr:0, write_en:0, write_data:1502284622
+read_addr_1:5, read_addr_2:0,                 write_addr:1, write_en:0, write_data:-262373281
+read_addr_1:5, read_addr_2:2,                 write_addr:2, write_en:1, write_data:-925312225
+read_addr_1:1, read_addr_2:7,                 write_addr:2, write_en:0, write_data:-2054660472
+     0.00ns WARNING  py.warnings                        /home/toni/Desktop/RISC-V_FPGA/tb/cocotb/register_file/register_file_ctb.py:86: DeprecationWarning: `logic_array.signed_integer` getter is deprecated. Use `logic_array.to_signed()` instead.
+                                                          tr = Transaction_Output(int(self.dut.read_data_1.value.signed_integer), int(self.dut.read_data_2.value.signed_integer))
+     3.00ns INFO     test                               
+                                                        
+                                                        Transaction 0!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+     4.00ns INFO     test                               
+                                                        
+                                                        Transaction 1!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+     5.00ns ERROR    test                               
+                                                        
+                                                        Transaction 2!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:1754840704
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+     6.00ns INFO     test                               
+                                                        
+                                                        Transaction 3!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+     7.00ns ERROR    test                               
+                                                        
+                                                        Transaction 4!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:1754840704
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+     8.00ns ERROR    test                               
+                                                        
+                                                        Transaction 5!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1754840704 read_data_2:1754840704
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+     9.00ns ERROR    test                               
+                                                        
+                                                        Transaction 6!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:1754840704
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    10.00ns INFO     test                               
+                                                        
+                                                        Transaction 7!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    11.00ns ERROR    test                               
+                                                        
+                                                        Transaction 8!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1005580859 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:1754840704
+                                                         
+    12.00ns ERROR    test                               
+                                                        
+                                                        Transaction 9!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:1754840704
+                                                         
+    13.00ns ERROR    test                               
+                                                        
+                                                        Transaction 10!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:-1015652990
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    14.00ns ERROR    test                               
+                                                        
+                                                        Transaction 11!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:857735608 read_data_2:1754840704
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    15.00ns ERROR    test                               
+                                                        
+                                                        Transaction 12!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:1754840704
+                                                         
+    16.00ns ERROR    test                               
+                                                        
+                                                        Transaction 13!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1754840704 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:1754840704
+                                                         
+    17.00ns ERROR    test                               
+                                                        
+                                                        Transaction 14!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1754840704 read_data_2:1754840704
+                                                         
+    18.00ns ERROR    test                               
+                                                        
+                                                        Transaction 15!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1754840704 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1754840704 read_data_2:1754840704
+                                                         
+    19.00ns ERROR    test                               
+                                                        
+                                                        Transaction 16!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:1754840704
+                                                         
+    20.00ns ERROR    test                               
+                                                        
+                                                        Transaction 17!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1005580859 read_data_2:-1005580859
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:1754840704
+                                                         
+    21.00ns ERROR    test                               
+                                                        
+                                                        Transaction 18!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1754840704 read_data_2:-1005580859
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    22.00ns INFO     test                               
+                                                        
+                                                        Transaction 19!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    23.00ns ERROR    test                               
+                                                        
+                                                        Transaction 20!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1005580859 read_data_2:0
+                                                         
+    24.00ns ERROR    test                               
+                                                        
+                                                        Transaction 21!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1599545251 read_data_2:-1807092397
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1005580859 read_data_2:0
+                                                         
+    25.00ns ERROR    test                               
+                                                        
+                                                        Transaction 22!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1005580859 read_data_2:-1807092397
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    26.00ns ERROR    test                               
+                                                        
+                                                        Transaction 23!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:857735608 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    27.00ns ERROR    test                               
+                                                        
+                                                        Transaction 24!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1729164126 read_data_2:1729164126
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:-1015652990
+                                                         
+    28.00ns ERROR    test                               
+                                                        
+                                                        Transaction 25!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1807092397 read_data_2:876311027
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:-1015652990
+                                                         
+    29.00ns ERROR    test                               
+                                                        
+                                                        Transaction 26!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:-189939389
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:857735608 read_data_2:1754840704
+                                                         
+    30.00ns ERROR    test                               
+                                                        
+                                                        Transaction 27!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1729164126 read_data_2:1729164126
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:857735608 read_data_2:1754840704
+                                                         
+    31.00ns ERROR    test                               
+                                                        
+                                                        Transaction 28!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:876311027 read_data_2:876311027
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    32.00ns ERROR    test                               
+                                                        
+                                                        Transaction 29!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:-1807092397
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    33.00ns ERROR    test                               
+                                                        
+                                                        Transaction 30!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:-1388250327
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1754840704 read_data_2:0
+                                                         
+    34.00ns ERROR    test                               
+                                                        
+                                                        Transaction 31!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1325687812 read_data_2:-1388250327
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1754840704 read_data_2:0
+                                                         
+    35.00ns ERROR    test                               
+                                                        
+                                                        Transaction 32!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:340245457 read_data_2:340245457
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    36.00ns ERROR    test                               
+                                                        
+                                                        Transaction 33!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1388250327 read_data_2:-1388250327
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    37.00ns ERROR    test                               
+                                                        
+                                                        Transaction 34!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1278339615 read_data_2:1729164126
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1754840704 read_data_2:0
+                                                         
+    38.00ns ERROR    test                               
+                                                        
+                                                        Transaction 35!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:340245457 read_data_2:-2063628741
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1754840704 read_data_2:0
+                                                         
+    39.00ns ERROR    test                               
+                                                        
+                                                        Transaction 36!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1729164126 read_data_2:-1388250327
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    40.00ns ERROR    test                               
+                                                        
+                                                        Transaction 37!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1729164126 read_data_2:340245457
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    41.00ns ERROR    test                               
+                                                        
+                                                        Transaction 38!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-291658174 read_data_2:-291658174
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1005580859 read_data_2:-1005580859
+                                                         
+    42.00ns ERROR    test                               
+                                                        
+                                                        Transaction 39!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1807092397 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1005580859 read_data_2:-1005580859
+                                                         
+    43.00ns ERROR    test                               
+                                                        
+                                                        Transaction 40!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1325687812 read_data_2:701359625
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1754840704 read_data_2:-1005580859
+                                                         
+    44.00ns ERROR    test                               
+                                                        
+                                                        Transaction 41!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1729164126 read_data_2:1325687812
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1754840704 read_data_2:-1005580859
+                                                         
+    45.00ns ERROR    test                               
+                                                        
+                                                        Transaction 42!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1545224993 read_data_2:-291658174
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    46.00ns ERROR    test                               
+                                                        
+                                                        Transaction 43!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-291658174 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    47.00ns ERROR    test                               
+                                                        
+                                                        Transaction 44!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:340245457 read_data_2:701359625
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    48.00ns ERROR    test                               
+                                                        
+                                                        Transaction 45!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:552956797 read_data_2:1729164126
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:0
+                                                         
+    49.00ns ERROR    test                               
+                                                        
+                                                        Transaction 46!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:340245457
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1599545251 read_data_2:-1807092397
+                                                         
+    50.00ns ERROR    test                               
+                                                        
+                                                        Transaction 47!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:552956797 read_data_2:1325687812
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1599545251 read_data_2:-1807092397
+                                                         
+    51.00ns ERROR    test                               
+                                                        
+                                                        Transaction 48!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1545224993 read_data_2:1729164126
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1005580859 read_data_2:-1807092397
+                                                         
+    52.00ns ERROR    test                               
+                                                        
+                                                        Transaction 49!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1729164126 read_data_2:340245457
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1005580859 read_data_2:-1807092397
+                                                         
+    53.00ns ERROR    test                               
+                                                        
+                                                        Transaction 50!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1729164126 read_data_2:1729164126
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:857735608 read_data_2:0
+                                                         
+    54.00ns ERROR    test                               
+                                                        
+                                                        Transaction 51!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1232167954 read_data_2:-1784798051
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:857735608 read_data_2:0
+                                                         
+    55.00ns ERROR    test                               
+                                                        
+                                                        Transaction 52!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1784798051 read_data_2:-361604455
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1729164126 read_data_2:1729164126
+                                                         
+    56.00ns ERROR    test                               
+                                                        
+                                                        Transaction 53!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:-1784798051
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1729164126 read_data_2:1729164126
+                                                         
+    57.00ns ERROR    test                               
+                                                        
+                                                        Transaction 54!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1807092397 read_data_2:876311027
+                                                         
+    58.00ns ERROR    test                               
+                                                        
+                                                        Transaction 55!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-25809235 read_data_2:-1545224993
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1807092397 read_data_2:876311027
+                                                         
+    59.00ns ERROR    test                               
+                                                        
+                                                        Transaction 56!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1376723856 read_data_2:1232167954
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:-189939389
+                                                         
+    60.00ns ERROR    test                               
+                                                        
+                                                        Transaction 57!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1232167954 read_data_2:-1376723856
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:-189939389
+                                                         
+    61.00ns ERROR    test                               
+                                                        
+                                                        Transaction 58!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1545224993 read_data_2:-1376723856
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1729164126 read_data_2:1729164126
+                                                         
+    62.00ns ERROR    test                               
+                                                        
+                                                        Transaction 59!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1545224993 read_data_2:1729164126
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1729164126 read_data_2:1729164126
+                                                         
+    63.00ns ERROR    test                               
+                                                        
+                                                        Transaction 60!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1703371284 read_data_2:-1703371284
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:876311027 read_data_2:876311027
+                                                         
+    64.00ns ERROR    test                               
+                                                        
+                                                        Transaction 61!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1545224993 read_data_2:-1545224993
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:876311027 read_data_2:876311027
+                                                         
+    65.00ns ERROR    test                               
+                                                        
+                                                        Transaction 62!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1784798051 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:-1807092397
+                                                         
+    66.00ns ERROR    test                               
+                                                        
+                                                        Transaction 63!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1703371284 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:-1807092397
+                                                         
+    67.00ns ERROR    test                               
+                                                        
+                                                        Transaction 64!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:-1388250327
+                                                         
+    68.00ns ERROR    test                               
+                                                        
+                                                        Transaction 65!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1784798051 read_data_2:1260500895
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:-1388250327
+                                                         
+    69.00ns ERROR    test                               
+                                                        
+                                                        Transaction 66!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1703371284 read_data_2:-1784798051
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1325687812 read_data_2:-1388250327
+                                                         
+    70.00ns ERROR    test                               
+                                                        
+                                                        Transaction 67!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1784798051 read_data_2:-859024422
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1325687812 read_data_2:-1388250327
+                                                         
+    71.00ns ERROR    test                               
+                                                        
+                                                        Transaction 68!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1395069033 read_data_2:-657689182
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:340245457 read_data_2:340245457
+                                                         
+    72.00ns ERROR    test                               
+                                                        
+                                                        Transaction 69!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:-1395069033
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:340245457 read_data_2:340245457
+                                                         
+    73.00ns ERROR    test                               
+                                                        
+                                                        Transaction 70!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:390479062 read_data_2:-1395069033
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1388250327 read_data_2:-1388250327
+                                                         
+    74.00ns ERROR    test                               
+                                                        
+                                                        Transaction 71!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-859024422 read_data_2:-1395069033
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1388250327 read_data_2:-1388250327
+                                                         
+    75.00ns ERROR    test                               
+                                                        
+                                                        Transaction 72!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:390479062
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1278339615 read_data_2:1729164126
+                                                         
+    76.00ns ERROR    test                               
+                                                        
+                                                        Transaction 73!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-859024422 read_data_2:-2049541768
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1278339615 read_data_2:1729164126
+                                                         
+    77.00ns ERROR    test                               
+                                                        
+                                                        Transaction 74!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-2049541768 read_data_2:-2049541768
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:340245457 read_data_2:-2063628741
+                                                         
+    78.00ns ERROR    test                               
+                                                        
+                                                        Transaction 75!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:0 read_data_2:0
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:340245457 read_data_2:-2063628741
+                                                         
+    79.00ns ERROR    test                               
+                                                        
+                                                        Transaction 76!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-881529007 read_data_2:-2049541768
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1729164126 read_data_2:-1388250327
+                                                         
+    80.00ns ERROR    test                               
+                                                        
+                                                        Transaction 77!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-859024422 read_data_2:-859024422
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1729164126 read_data_2:-1388250327
+                                                         
+    81.00ns ERROR    test                               
+                                                        
+                                                        Transaction 78!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:348154943 read_data_2:-351521972
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1729164126 read_data_2:340245457
+                                                         
+    82.00ns ERROR    test                               
+                                                        
+                                                        Transaction 79!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-141271986 read_data_2:348154943
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1729164126 read_data_2:340245457
+                                                         
+    83.00ns ERROR    test                               
+                                                        
+                                                        Transaction 80!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-351521972 read_data_2:-351521972
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-291658174 read_data_2:-291658174
+                                                         
+    84.00ns ERROR    test                               
+                                                        
+                                                        Transaction 81!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1868497320 read_data_2:-859024422
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-291658174 read_data_2:-291658174
+                                                         
+    85.00ns ERROR    test                               
+                                                        
+                                                        Transaction 82!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-859024422 read_data_2:-1868497320
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1807092397 read_data_2:0
+                                                         
+    86.00ns ERROR    test                               
+                                                        
+                                                        Transaction 83!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:390479062 read_data_2:-141271986
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1807092397 read_data_2:0
+                                                         
+    87.00ns ERROR    test                               
+                                                        
+                                                        Transaction 84!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-141271986 read_data_2:-1868497320
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1325687812 read_data_2:701359625
+                                                         
+    88.00ns ERROR    test                               
+                                                        
+                                                        Transaction 85!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-141271986 read_data_2:-1868497320
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1325687812 read_data_2:701359625
+                                                         
+    89.00ns ERROR    test                               
+                                                        
+                                                        Transaction 86!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-76006160 read_data_2:-39913156
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1729164126 read_data_2:1325687812
+                                                         
+    90.00ns ERROR    test                               
+                                                        
+                                                        Transaction 87!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-881529007 read_data_2:-1868497320
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:1729164126 read_data_2:1325687812
+                                                         
+    91.00ns ERROR    test                               
+                                                        
+                                                        Transaction 88!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:308069639 read_data_2:-39913156
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1545224993 read_data_2:-291658174
+                                                         
+    92.00ns ERROR    test                               
+                                                        
+                                                        Transaction 89!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:308069639 read_data_2:-881529007
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-1545224993 read_data_2:-291658174
+                                                         
+    93.00ns ERROR    test                               
+                                                        
+                                                        Transaction 90!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1868497320 read_data_2:-141271986
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-291658174 read_data_2:0
+                                                         
+    94.00ns ERROR    test                               
+                                                        
+                                                        Transaction 91!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:308069639 read_data_2:1321120954
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:-291658174 read_data_2:0
+                                                         
+    95.00ns ERROR    test                               
+                                                        
+                                                        Transaction 92!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:308069639 read_data_2:348154943
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:340245457 read_data_2:701359625
+                                                         
+    96.00ns ERROR    test                               
+                                                        
+                                                        Transaction 93!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1868497320 read_data_2:1948939605
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:340245457 read_data_2:701359625
+                                                         
+    97.00ns ERROR    test                               
+                                                        
+                                                        Transaction 94!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:181439472 read_data_2:181439472
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:552956797 read_data_2:1729164126
+                                                         
+    98.00ns ERROR    test                               
+                                                        
+                                                        Transaction 95!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1948939605 read_data_2:-76006160
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:552956797 read_data_2:1729164126
+                                                         
+    99.00ns ERROR    test                               
+                                                        
+                                                        Transaction 96!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1000831907 read_data_2:1948939605
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:340245457
+                                                         
+   100.00ns ERROR    test                               
+                                                        
+                                                        Transaction 97!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1321120954 read_data_2:-76006160
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:0 read_data_2:340245457
+                                                         
+[-76006160, -1000831907, -925312225, -1868497320, -723405649, 1321120954, 308069639, 181439472]
+   101.00ns ERROR    test                               
+                                                        
+                                                        Transaction 98!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:1321120954 read_data_2:1948939605
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:552956797 read_data_2:1325687812
+                                                         
+   102.00ns ERROR    test                               
+                                                        
+                                                        Transaction 99!
+                                                        
+                                                                        --- Expected (Golden): ---
+                                                        read_data_1:-1000831907 read_data_2:181439472
+                                                        
+                                                                        --- Got from Silicon: ---
+                                                        read_data_1:552956797 read_data_2:1325687812
+                                                         
+report: fills=100 errors=95
+ 
