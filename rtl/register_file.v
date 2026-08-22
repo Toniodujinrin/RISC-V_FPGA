@@ -1,7 +1,7 @@
 module register_file
 #(
   DATA_WIDTH = 32, 
-  ADDR_WIDTH = 3
+  ADDR_WIDTH = 5
 )
 (
   input clk, reset, 

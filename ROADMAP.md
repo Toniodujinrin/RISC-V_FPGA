@@ -25,8 +25,7 @@ So this plan commits to a **primary target** and treats the rest as sequenced st
 
 The one design decision that makes P2 cheap is in [Day 1](#the-memory-interface-decision-do-this-once-get-it-right): **give the core a `valid`/`ready` stalling memory interface from the very first single-cycle version.** Then on Tuesday the cache swaps in behind an interface the pipeline already respects, instead of being surgery on a finished design.
 
-> **Fill in:** FPGA board = `________________`, vendor toolchain = `________________`.
-> This determines the BRAM/LUT-RAM inference style and the UART primitive in S1. Everything before S1 is vendor-neutral.
+> **Target board: Intel Cyclone, Quartus toolchain.** The existing `(* ramstyle = ... *)` attributes are already correct Intel syntax and stay as-is. This differs from the paper's Xilinx Artix-7, so expect different resource numbers and a different UART primitive in S1. Everything before S1 is vendor-neutral.
 
 ---
 
@@ -38,7 +37,7 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 |---|---|---|---|
 | `rtl/alu.v` | 57 | ✅ | **Done 22 Aug** — lints clean under `-Wall`. See [B1](#b1--aluv) |
 | `rtl/alu_controller.v` | 100 | ✅ | **Done 22 Aug** — 2 TODOs left in-file. See [B2](#b2--alu_controllerv) |
-| `rtl/branch_predictor.v` | 117 | ❌ | Syntax errors + undeclared signals. See [B3](#b3--branch_predictorv) |
+| `rtl/branch_predictor.v` | 124 | ✅ | **Done 22 Aug** — gshare, lints to 1 benign warning. See [B3](#b3--branch_predictorv) |
 | `rtl/register_file.v` | 52 | ✅ | 8 regs, no `x0` hardwire. See [B4](#b4--register_filev) |
 | `rtl/forwarding_unit.v` | 39 | ✅ | Logic is right; width is wrong. See [B5](#b5--forwarding_unitv) |
 | `rtl/instruction_decoder.v` | 89 | ✅ | Missing AUIPC + shift-imm `funct_7`. See [B6](#b6--instruction_decoderv) |
@@ -46,7 +45,6 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 | `rtl/control.v` | 0 | — | **empty** |
 | `rtl/pc_controller.v` | 0 | — | **empty** |
 | `rtl/hazard_detector.v` | 0 | — | **empty** |
-| `rtl/immediate_generator.v` | 0 | — | **empty** (and redundant — see [D1](#d1-immediate-generation)) |
 
 **There are zero commits in this repo.** First action of Day 0 is `git commit`. You are about to do heavy refactoring with no undo.
 
@@ -91,7 +89,7 @@ The one deviation I'd make from the paper's order: **do the pipeline before CSR/
   ```
   Add a `Makefile` at the root with `make lint`, `make test` (runs every cocotb suite), `make wave`. A 30-minute investment that pays back by Sunday afternoon.
 - [x] ~~**Fix `alu.v` and `alu_controller.v`**~~ — [B1](#b1--aluv), [B2](#b2--alu_controllerv) done 22 Aug. Both compile under `-g2001` and `-g2012`; `alu.v` lints clean under `verilator -Wall`.
-- [ ] **Fix `branch_predictor.v`** — [B3](#b3--branch_predictorv), 7 defects. Do not add features to a file that doesn't parse. See the Day 3 recommendation before sinking time here.
+- [x] ~~**Fix `branch_predictor.v`**~~ — [B3](#b3--branch_predictorv) done 22 Aug. All 7 syntax defects closed, plus the PHT index mismatch that would have stopped it learning at all.
 - [ ] **Fix the widths** — [B4](#b4--register_filev), [B5](#b5--forwarding_unitv). `ADDR_WIDTH = 3` gives you 8 registers; RV32I has 32.
 - [ ] Commit after each module. Small commits are your bisect trail.
 
@@ -115,7 +113,6 @@ Today, tie `req_ready = 1` and `resp_valid = 1` in a trivial `$readmemh` RAM. On
 
 ### Tasks
 
-- [ ] `rtl/immediate_generator.v` — resolve [D1](#d1-immediate-generation) first (I recommend deleting it)
 - [ ] `rtl/control.v` — main decode: `RegWrite`, `MemRead`, `MemWrite`, `MemToReg`, `ALUSrc`, `Branch`, `Jump`, `ALUOp`. Drive from `op_code` only.
 - [x] ~~`rtl/alu_controller.v` — extend past R-type~~ — done 22 Aug. Loads/stores/`LUI`/`JAL`/`JALR` map to `ADD`/`PC`, all six branches map to compare ops. **`AUIPC` still missing** (TODO in-file).
 - [ ] `rtl/pc_controller.v` — `pc+4`, branch target, `JAL` target, `JALR` target (**remember to clear bit 0**)
@@ -158,14 +155,20 @@ The riskiest day. Budget the whole day; do not add CSRs today no matter how well
 
 ## Day 3 — Monday, predictor + CSRs + traps
 
-### Morning: the 2-bit dynamic predictor
+### Morning: the dynamic predictor
 
-`rtl/branch_predictor.v` is a gshare design (BHR XOR PC index) with BHR snapshots for recovery — more ambitious than the paper's plain 2-bit PHT and currently non-compiling ([B3](#b3--branch_predictorv)).
+**This recommendation changed on 22 Aug.** The original plan was to write a throwaway 2-bit PHT and defer gshare to S3, because `rtl/branch_predictor.v` didn't compile and its recovery path looked unsound. Both concerns are gone — it compiles, lints to one benign warning, the index bug that would have stopped it learning is fixed, and the BHR recovery turned out to be correct ([B3](#b3--branch_predictorv)). **Use the gshare predictor. Don't write the simple one.**
 
-**Recommendation: start with the simple version.** A direct-mapped 2-bit saturating PHT indexed by `pc[8:2]`, no BHR, no snapshots — which is what the paper actually describes ("2-bit dynamic branch predictor in the Instruction Fetch stage"). It's ~20 lines, it's what you need for the paper's result, and the misprediction-recovery path for gshare's BHR is a genuinely subtle piece of hardware. Keep the gshare file; make it S3.
+What's left here is integration, not the predictor itself:
 
-- [ ] Simple 2-bit PHT in IF, update from EX on resolve
+- [ ] **Decide the `history_read` gating question first** ([B3](#b3--branch_predictorv), "still open"). Everything below depends on it.
+- [ ] Wire the prediction port into IF; wire the update port to branch resolution in EX
+- [ ] Carry `{prediction_out, prediction_index, bhr_snap_index}` through `IF/ID` and `ID/EX` — that's 9 + `$clog2(BHR_SNAPS)` bits per in-flight branch
+- [ ] On mispredict in EX: flush, assert `history_write` with `predicted_index`/`predicted_in`/`predicted_snap_index` from the pipeline registers
 - [ ] Verify: a loop of 100 iterations should mispredict ~2 times, not ~100. Count mispredicts in the TB and assert on the number.
+- [ ] Verify the PHT actually trains: a branch that alternates taken/not-taken should settle, and a consistently-taken branch should reach `2'b11`. This is the test that would have caught the index bug.
+
+**Fallback:** if predictor integration is still fighting you by Monday lunchtime, fall back to static predict-not-taken and move to CSRs. The predictor only affects CPI, never correctness — if it changes a program's result, your flush logic is wrong, not your predictor.
 
 ### Afternoon: Zicsr → RV32I43F
 
@@ -202,21 +205,21 @@ Only start this if Monday's exit criteria are met and committed on a tag.
 
 **S1 — FPGA bring-up.** Vendor-neutral core, vendor-specific edges:
 - Replace `$readmemh` init with your toolchain's memory-init flow
-- Memory inference: the paper gets 3,010 LUTs / 998 FFs by inferring LUT RAM. Your `(* ramstyle = ... *)` attributes are Intel/Altera syntax — they're ignored by Xilinx (which wants `(* ram_style = ... *)`) and by open-source flows. Fix these for your actual vendor.
+- Memory inference: your `(* ramstyle = ... *)` attributes are correct Intel syntax, so they'll be honoured by Quartus. Read the fitter report rather than trusting the attributes — in particular check whether `pht` (128 × 2 bits) actually landed in an M9K, and whether spending a 9,216-bit block on 256 bits of state is what you want versus `"MLAB"`. The paper's 3,010 LUT / 998 FF figure is Artix-7 and won't transfer; expect different numbers on Cyclone.
 - Clock: start at 25 MHz, not 50. Meet timing, then push.
 - Then UART TX → GPIO (LEDs + buttons) → the clock-enable single-step debug feature the paper describes.
 
 **S2 — Dhrystone 2.1.** Needs the full toolchain, `-O2`, a working `mcycle`/`minstret`, and UART output. Paper's number: 646,640 instructions in 1,043,092 cycles = 1.09 DMIPS/MHz, 1.61 CPI.
 
-**S3 — gshare predictor.** Finish `rtl/branch_predictor.v` with BHR snapshot recovery, measure the CPI delta against the simple 2-bit PHT. This is a genuinely interesting result and the most publishable thing you could add beyond the paper.
+**S3 — predictor comparison.** gshare is now the Day 3 design rather than a stretch goal. The stretch version is the *measurement*: build the plain 2-bit PHT (`pht[pc[8:2]]`, no BHR — about 20 lines) as a drop-in alternative and compare mispredict counts and CPI on the same benchmarks. Quantifying what the BHR buys you is the most publishable thing here, and it goes beyond what the paper reports.
 
 ---
 
 ## Bug list from the audit
 
-### B1 — `alu.v` ✅ resolved 22 Aug
+### B1 — `alu.v`
 
-Rewritten and fixed. For the record, what was wrong and what closed it:
+**✅ Resolved 22 Aug.** Rewritten and fixed. For the record, what was wrong and what closed it:
 
 | | Original issue | Resolution |
 |---|---|---|
@@ -238,9 +241,9 @@ Rewritten and fixed. For the record, what was wrong and what closed it:
 
 Nothing outstanding in this file.
 
-### B2 — `alu_controller.v` ✅ syntax resolved 22 Aug, 2 TODOs left
+### B2 — `alu_controller.v`
 
-Rewritten as a `casez` over `{op_code[6:2], funct_7[5], funct_3}`, which is a better structure than the original `funct_3`-only case — it decodes R-type, I-type, loads, stores, branches and jumps in one table, and correctly ignores `funct_7[5]` for `ADDI` while honouring it for `SRAI`. That closes the original bug where `ADDI x1, x2, -2048` decoded as a subtract.
+**✅ Syntax resolved 22 Aug; 2 TODOs left in-file.** Rewritten as a `casez` over `{op_code[6:2], funct_7[5], funct_3}`, which is a better structure than the original `funct_3`-only case — it decodes R-type, I-type, loads, stores, branches and jumps in one table, and correctly ignores `funct_7[5]` for `ADDI` while honouring it for `SRAI`. That closes the original bug where `ADDI x1, x2, -2048` decoded as a subtract.
 
 | | Original issue | Resolution |
 |---|---|---|
@@ -262,17 +265,35 @@ Rewritten as a `casez` over `{op_code[6:2], funct_7[5], funct_3}`, which is a be
 **Benign lint warnings** (don't chase these): `funct_7[6,4:0]` and `op_code[1:0]` are legitimately never needed; `I_TYPE_1` (SYSTEM) goes live on Day 3 with CSRs; `DATA_WIDTH` is an unused parameter you can delete.
 
 ### B3 — `branch_predictor.v`
-| | Issue |
-|---|---|
-| 1 | `localparam LOCATIONS = 1 << HIST_BITS` missing `;` |
-| 2 | `bhr_snaps` declaration missing `;` |
-| 3 | `predicted_read` and `pht_read` are assigned but **never declared** |
-| 4 | `prediction_out` / `prediction_valid` are wires (plain `output`) but assigned in an `always` block |
-| 5 | `pht[predicted_inde_r]` — typo, should be `predicted_index_r` |
-| 6 | `wire current_index` is **1 bit**; needs `[HIST_BITS-1:0]` |
-| 7 | The reset block in the PHT `always` has no `else` — the reset assignments are immediately overwritten by the fall-through code in the same block |
 
-Given the count, consider rewriting this file as the simple 2-bit PHT (Day 3) and keeping the gshare version for S3.
+**✅ Resolved 22 Aug.** A gshare predictor (BHR XOR PC index, with BHR snapshots for misprediction recovery) — more ambitious than the paper's plain 2-bit PHT. Now compiles under `-g2001` and `-g2012` and lints to a single benign warning.
+
+| | Original issue | Resolution |
+|---|---|---|
+| 1 | `localparam LOCATIONS` missing `;` | fixed |
+| 2 | `bhr_snaps` declaration missing `;` | fixed |
+| 3 | `predicted_read` / `pht_read` assigned but never declared | removed |
+| 4 | `prediction_out` / `prediction_valid` were wires but driven in an `always` | now `output reg` |
+| 5 | `pht[predicted_inde_r]` typo | fixed |
+| 6 | `current_index` was 1 bit | now `[HIST_BITS-1:0]` |
+| 7 | PHT reset block had no `else`, so resets were overwritten in the same block | `else` added |
+| 8 | Missing `parameter` keyword broke Verilog-2001 | fixed 22 Aug |
+| 9 | **Predict and update indexed different address spaces.** Read used `bhr ^ pc[8:2]`; update truncated a 32-bit PC to `pc[6:0]` with no XOR. Every update trained the wrong entry, so the predictor could never learn. | fixed 22 Aug — new registered `prediction_index` output carries the actual index through the pipeline and back on `predicted_index` |
+| 10 | Dead `snap_index` reg | removed |
+| 11 | Mixed sync/async reset across the two always blocks (`SYNCASYNCNET`) | unified to async |
+| 12 | PHT initialised to `2'b00`, so every branch mispredicted twice before it could predict taken | now `2'b01` |
+
+**Two things that look like bugs but are correct** — comment them before you forget, or you'll "fix" them into breakage:
+
+- **BHR recovery.** L54 snapshots the *post-shift* value `{bhr[5:0], pred}`; L59 recovers with `{snap[6:1], actual}`. Since `snap[6:1] == bhr[5:0]`, that reconstructs the pre-shift history and appends the true outcome. The two apparent off-by-ones cancel exactly.
+- **Snapshot index handshake.** L54 writes `bhr_snaps[bhr_snap_index]` before L55 increments, so latching `{prediction_out, prediction_index, bhr_snap_index}` in the same cycle yields a matched set.
+
+**Still open:**
+
+- **`history_read` gating — decide before Day 2 wiring.** The BHR shifts on every fetch where `history_read` is asserted, but at IF you don't yet know the instruction is a branch. Either gate `history_read` with a pre-decode of the fetch word, or accept history pollution from non-branches. This is an integration decision, not a code fix, and it applies to any BHR-based design.
+- **Naming:** `predicted_valid` (input) vs `prediction_valid` (output) differ by one character and appear in the same expressions. Rename the input to `update_valid`.
+- **Residual one-cycle skew** (won't fix): `current_index` uses `bhr` from the cycle before `prediction_valid` rises, while the snapshot uses `bhr` from the cycle after. Now that the index is carried separately this no longer affects PHT training — it only slightly degrades recovery fidelity.
+- **Pipeline cost:** each in-flight branch must now carry 7 bits of `prediction_index` plus 2 bits of `prediction_out` plus `$clog2(BHR_SNAPS)` bits of snapshot index. Size `IF/ID` and `ID/EX` accordingly.
 
 ### B4 — `register_file.v`
 | | Issue | Fix |
@@ -299,9 +320,8 @@ One gap for later: a `SW` whose store-data comes from an immediately preceding `
 ## Open decisions
 
 ### D1. Immediate generation
-`immediate_generator.v` is empty, but `instruction_decoder.v` already generates every immediate format correctly. The paper lists them as separate modules (design principle #2, "clear module roles").
 
-**Recommendation: delete the empty file and keep immediate generation in the decoder.** It's already written and correct, splitting it costs an hour and buys nothing before Tuesday. Note the deviation from the paper in your README. Revisit only if you want strict architectural parity.
+**✅ Settled 22 Aug — `immediate_generator.v` deleted.** `instruction_decoder.v` already generates every immediate format correctly, so the separate module was redundant. This is a deliberate deviation from the paper, which lists them as separate modules under design principle #2 ("clear module roles") — note it in the README.
 
 ### D2. Branch resolution stage
 The paper resolves in EX and flushes 2 stages. Resolving in ID would cost only 1 flush cycle but adds a comparator and more forwarding paths in ID. **Stay with EX** — it matches the paper, and the dynamic predictor is what recovers the CPI anyway.

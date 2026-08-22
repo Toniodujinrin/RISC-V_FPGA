@@ -1,6 +1,6 @@
 module forwarding_unit
 #(
-  ADDR_WIDTH = 3
+  ADDR_WIDTH = 5
 )
 (
   input [ADDR_WIDTH-1:0] ID_EX_RS1, 
