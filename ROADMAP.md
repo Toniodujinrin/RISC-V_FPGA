@@ -40,7 +40,7 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 | `rtl/alu_controller.v` | 67 | ✅ | **Done 23 Aug** — `JALR` → `` `ADD_C ``. See [B2](#b2--alu_controllerv) |
 | `rtl/branch_logic.v` | 35 | ✅ | **Done 23 Aug** — EX-stage resolve, lints clean, 5/5 directed cases |
 | `rtl/branch_predictor.v` | 125 | ✅ | **Done 22 Aug** — gshare, lints to 1 benign warning. See [B3](#b3--branch_predictorv) |
-| `rtl/register_file.v` | 43 | ✅ | **Done 22 Aug** — 32 regs, `x0` hardwired, cocotb 100/100. See [B4](#b4--register_filev) |
+| `rtl/register_file.v` | 45 | ✅ | **Done 23 Aug** — 32 regs, `x0` hardwired, write-first. See [B4](#b4--register_filev) |
 | `rtl/forwarding_unit.v` | 40 | ✅ | **Done 22 Aug** — lints clean. See [B5](#b5--forwarding_unitv) |
 | `rtl/instruction_decoder.v` | 100 | ✅ | **Done 22 Aug** — decode verified, suite still to write. See [B6](#b6--instruction_decoderv) |
 | `rtl/l1.v` | 894 | ✅ | 4-way cache + WB FIFO + arbiter. Standalone TB exists. **Byte-only data path — cannot do `LW`**, see [Day 4](#day-4--tuesday-cache-integration-p2) |
@@ -251,8 +251,8 @@ Each is ~10 instructions and ends by writing a known value to a known address:
 
 The riskiest day. Budget the whole day; do not add CSRs today no matter how well it's going.
 
-- [ ] `★☆☆ P0` **Register file write-first behaviour** — [B4](#b4--register_filev), the one item still open on that module. Reads are combinational as of 22 Aug, but a WB write landing at the end of cycle N is still invisible to an ID read *during* cycle N, and forwarding only covers producers one and two instructions ahead, so a distance-3 RAW reads stale. Fix: write on `negedge clk`. One word, and it is independent of everything else today — do it first and forget it.
-  - **The `register_file` cocotb suite cannot catch this.** It samples mid-cycle, before the write edge, which is exactly the behaviour that hides the bug. `hazard.S` is what has to catch it — make sure that test includes a dependency at **distance 3**, not just 1 and 2.
+- [x] ~~`★☆☆ P0` **Register file write-first behaviour**~~ — **done 23 Aug** ([B4](#b4--register_filev)). Write moved to `negedge clk`, so a WB write in cycle N is visible to an ID read in cycle N. Without it a distance-3 RAW reads stale, because forwarding only covers producers one and two instructions ahead.
+  - **The `register_file` cocotb suite cannot catch this**, and that is now demonstrated rather than assumed: its driver applies stimulus on the falling edge, which is also the write edge, so it never exercises a same-cycle read-and-write the way a pipeline does. It still passes 100/100 either way. **`hazard.S` is what has to catch a regression here — make sure it includes a dependency at distance 3, not just 1 and 2.**
 - [ ] `★★☆ P0` **Pipeline registers first, hazards second.** Insert `IF/ID`, `ID/EX`, `EX/MEM`, `MEM/WB` with no forwarding and no hazard logic. Verify with a test where every instruction is separated by 4 `NOP`s — all 7 Day-1 programs must pass in NOP-padded form. This isolates "did I wire the pipeline right" from "did I get hazards right", and that separation is what keeps Sunday from becoming an undebuggable mess.
 - [ ] `★☆☆ P0` **⚠** **Wire in `rtl/forwarding_unit.v`** — already written, lint-clean, and logically correct (EX/MEM priority over MEM/WB is right). Just connect it and drop the NOP padding from the arithmetic tests. Easy, but it cannot happen before the pipeline registers exist.
 - [ ] `★☆☆ P0` **⚠** **Wire in `rtl/branch_logic.v`** — written 23 Aug, lints clean, 5/5 directed cases pass. Easy, but it needs `EX_pc`/`EX_imm` out of `ID/EX`, so the pipeline registers must exist first. See [Branch resolution in EX](#branch-resolution-in-ex) for what it needs from the pipeline registers.
@@ -445,19 +445,21 @@ Nothing outstanding in this file.
 
 ### B4 — `register_file.v`
 
-**✅ Three of four resolved 22 Aug.** Verified by the cocotb suite at 100/100.
+**✅ All four resolved; write-first landed 23 Aug.** Verified by the cocotb suite at 100/100 plus a directed write-first test.
 
 | | Issue | Resolution |
 |---|---|---|
 | 1 | `ADDR_WIDTH = 3` → 8 registers; RV32I has 32 | now `ADDR_WIDTH = 5` |
 | 2 | `x0` was a normal writable register, so `addi x0,x0,0` (the canonical NOP) corrupted the zero constant | writes to addr 0 dropped, reads of addr 0 forced to zero |
-| 3 | Registered read with no write-first bypass | read is now combinational; **bypass still outstanding**, see Day 2 |
+| 3 | Registered read with no write-first bypass | read is combinational, and the write moved to `negedge clk` on 23 Aug so a WB write in cycle N is visible to an ID read in cycle N. Verified: `ID/EX` latches the new value at the end of that cycle |
 | 4 | `$dumpfile`/`$dumpvars` inside the RTL | removed; waves now come from `WAVES ?= 1` in the cocotb Makefile, written to `sim_build/register_file.fst` |
 
 Two changes made along the way that aren't in the original defect list:
 
 - **`file <= 0` in the reset branch didn't elaborate** — you can't assign a scalar to an unpacked array in Verilog-2001, and iverilog doesn't support it in `-g2012` either. The array now has no reset at all and takes its power-up state from an `initial` loop, which is what `ramstyle = "logic"` wants: distributed RAM has no reset port, and forcing one would infer 1,024 flip-flops instead.
 - **The `reset` port is gone**, since nothing used it any more.
+
+**Watch this at synthesis (S1).** A `negedge` write makes the design dual-edge: the WB→RF write path now has half a clock period, 10 ns at 50 MHz. That should be comfortable, but it is a half-cycle path in static timing analysis and some flows flag dual-edge designs. If it ever bites, the alternative is a combinational bypass mux in the register file (`write_addr == read_addr && write_en → write_data`), which keeps everything posedge at the cost of a mux in the ID read path.
 
 **Read style is settled: combinational read, `ID/EX` registers the operands.** This is the conventional structure and matches the paper's diagram. The consequence to hold onto is that the register file is now a plain memory, *not* a memory plus a pipeline stage — so `ID/EX` must latch `read_data_1/2`, and there is no hidden extra cycle in the operand path.
 

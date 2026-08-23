@@ -18,7 +18,9 @@ module register_file
   (* ramstyle = "logic" *) reg [DATA_WIDTH-1:0] file [0:N_REGS-1];
 
   //sequential write. x0 is hardwired, so writes to it are dropped.
-  always@(posedge clk)
+  //write is also "early", i.e computed on negedge so that the new write back value is
+  //available for read in the sam cycle
+  always@(negedge clk)
   begin 
     if(write_en && write_addr != {ADDR_WIDTH{1'b0}})
       file[write_addr] <= write_data; 
