@@ -1,6 +1,6 @@
 <testsuites name="results">
   <testsuite name="all" package="all">
-    <property name="random_seed" value="1787444500" />
-    <testcase name="test_random" classname="register_file_ctb" file="/home/toni/Desktop/RISC-V_FPGA/tb/cocotb/register_file/register_file_ctb.py" lineno="177" time="0.04378652572631836" sim_time_ns="100.0" ratio_time="2283.807594716151" />
+    <property name="random_seed" value="1787506432" />
+    <testcase name="test_random" classname="register_file_ctb" file="/home/toni/Desktop/RISC-V_FPGA/tb/cocotb/register_file/register_file_ctb.py" lineno="177" time="0.06461071968078613" sim_time_ns="100.0" ratio_time="1547.7307866876756" />
   </testsuite>
 </testsuites>

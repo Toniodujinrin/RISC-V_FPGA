@@ -26,12 +26,13 @@ module alu
     `SRA: r = $signed(x) >>> y[4:0]; 
     `LT: r = ($signed(x) < $signed(y))? 1:0; 
     `LTU: r = x < y ? 1:0; 
-    `PC: r = x + 4;
     `GTE: r = ($signed(x) >= $signed(y))? 1:0; 
     `GTEU: r = x >= y ? 1 : 0; 
     `NEQ: r = x == y ? 0 : 1; 
     `EQ: r = x == y? 1 : 0; 
     `NON: r = 0;
+    //JALR target: the spec requires bit 0 of (rs1+imm) be cleared
+    `ADD_C: begin r = $signed(x)+$signed(y); r[0] = 1'b0; end 
     default: r = 0; 
     endcase
   end

@@ -35,9 +35,9 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 
 | File | Lines | Compiles | Status |
 |---|---|---|---|
-| `rtl/riscv_defs.vh` | 49 | — | Shared ALU ops + instruction classes. See [D5](#d5-shared-constants) |
-| `rtl/alu.v` | 42 | ✅ | **Done 22 Aug** — lints clean under `-Wall`. See [B1](#b1--aluv) |
-| `rtl/alu_controller.v` | 67 | ✅ | **Done 22 Aug** — all TODOs closed. See [B2](#b2--alu_controllerv) |
+| `rtl/riscv_defs.vh` | 48 | — | 16 ALU ops (4-bit field, **full**) + instruction classes. See [D5](#d5-shared-constants) |
+| `rtl/alu.v` | 43 | ✅ | **Done 23 Aug** — `ADD_C` added, `` `PC `` retired, lints clean. See [B1](#b1--aluv) |
+| `rtl/alu_controller.v` | 67 | ✅ | **Done 23 Aug** — `JALR` → `` `ADD_C ``. See [B2](#b2--alu_controllerv) |
 | `rtl/branch_logic.v` | 35 | ✅ | **Done 23 Aug** — EX-stage resolve, lints clean, 5/5 directed cases |
 | `rtl/branch_predictor.v` | 125 | ✅ | **Done 22 Aug** — gshare, lints to 1 benign warning. See [B3](#b3--branch_predictorv) |
 | `rtl/register_file.v` | 43 | ✅ | **Done 22 Aug** — 32 regs, `x0` hardwired, cocotb 100/100. See [B4](#b4--register_filev) |
@@ -45,7 +45,7 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 | `rtl/instruction_decoder.v` | 100 | ✅ | **Done 22 Aug** — decode verified, suite still to write. See [B6](#b6--instruction_decoderv) |
 | `rtl/l1.v` | 894 | ✅ | 4-way cache + WB FIFO + arbiter. Standalone TB exists. **Byte-only data path — cannot do `LW`**, see [Day 4](#day-4--tuesday-cache-integration-p2) |
 | `rtl/control.v` | 94 | ✅ | **Started 22 Aug** — opcode decode only; no SYSTEM arm yet |
-| `rtl/pc_controller.v` | 23 | ❌ | in progress, does not compile yet |
+| `rtl/pc_controller.v` | 38 | ✅ | **Done 23 Aug** — priority encoder, lints clean. See [PC redirect priority](#pc-redirect-priority) |
 | `rtl/inst_mem.v` | 0 | — | **empty** |
 | `rtl/data_mem.v` | 0 | — | **empty** |
 | `rtl/hazard_detector.v` | 0 | — | **empty** |
@@ -136,7 +136,7 @@ Start each day at the top and work down: the cheap items build momentum and, mor
 | `tb/cocotb/register_file` | ✅ 100 random, passing | read/write, `x0` hardwiring |
 | `tb/tb_ctrl.v`, `tb/tb_l1.v` | ✅ directed | L1 write-back path, FIFO-full drain |
 | `tb/cocotb/instruction_decoder` | ❌ **to write** | every format's immediate, shift-imm `funct_7`, the LOAD/SYSTEM funct_3 collision |
-| `tb/cocotb/alu` | ❌ **to write** | all 16 ops, signed compares, `SRA` sign-fill, shamt masking |
+| `tb/cocotb/alu` | ❌ **to write** | all 16 ops, signed compares, `SRA` sign-fill, shamt masking, `` `ADD_C `` bit-0 clear |
 
 **Cases the decoder suite must cover** — the decode fix on 22 Aug was verified against these, so they are known to discriminate:
 
@@ -144,6 +144,12 @@ Start each day at the top and work down: the cheap items build momentum and, mor
 - `LH`, `LHU`, `CSRRW`, `CSRRWI` — funct_3 001/101 collides with the shifts, and their 12-bit immediates must not truncate to a 5-bit shamt
 - `ADDI` at −2048 and +2047 — sign-extension boundaries
 - S/B/J immediates at their extremes, since the bit-scrambling in those formats is where transcription errors hide
+
+**Cases the ALU suite must cover** — verified against these on 23 Aug:
+
+- `` `ADD_C `` with an odd sum (masked), an already-even sum (unchanged), and a negative immediate — this is the `JALR` target path
+- `SRA` vs `SRL` on a negative operand — sign-fill vs zero-fill
+- `LT` vs `LTU` on `0xFFFFFFFF` — signed says less-than, unsigned says not
 
 ### Testbench gotchas — learned the hard way on `register_file`, 22 Aug
 
@@ -178,10 +184,46 @@ Today, tie `req_ready = 1` and `resp_valid = 1` in a trivial `$readmemh` RAM tha
 
 The cache does *not* drop in unchanged, though: it has no size input and a byte-only data path, so it needs the work described at the top of [Day 4](#day-4--tuesday-cache-integration-p2) before it can serve a single `LW`. What the interface decision buys you is that the *pipeline* needs no surgery — the change is confined to the memory.
 
+### PC redirect priority
+
+There is no "which target" select signal, and it cannot come from the decoder. Each candidate target
+arrives paired with its own qualifier, and the three redirect sources originate in **three different
+pipeline stages** — so no single decode signal could pick between them:
+
+| Qualifier | Target | Originates in |
+|---|---|---|
+| `trapped` | `t_target` | Trap Controller (Day 3) |
+| `bp_miss` | `branch_target_actual` | `branch_logic.v`, EX |
+| `ex_jump` | `jump_target` (ALU result) | EX |
+| `pc_stall` | hold `if_pc` | Hazard Unit |
+| `bp_taken` | `branch_target` | Branch Predictor, IF |
+| — | `if_pc + 4` | default |
+
+```verilog
+if      (trapped)  pc_next = t_target;                              // 1
+else if (bp_miss)  pc_next = branch_target_actual;                  // 2
+else if (ex_jump)  pc_next = jump_target;                           // 3  already masked by `ADD_C
+else if (pc_stall) pc_next = if_pc;                                 // 4  hold
+else if (bp_taken) pc_next = branch_target;                         // 5  speculative
+else               pc_next = if_pc + 4;                             // 6
+```
+
+The ordering carries real content:
+
+- **Traps win outright.** A trap belongs to an older instruction than anything in EX, and exceptions must be precise — the trapping instruction and everything younger is squashed regardless of what the branch unit thinks.
+- **Redirects beat stalls, and this is the one people invert.** If EX mispredicts while a load-use stall is asserted, the instructions held in IF/ID are on the wrong path and about to be flushed anyway. Put `pc_stall` above `bp_miss` and a mispredict gets swallowed by a stall — a hang or silently wrong execution, with no test that obviously catches it.
+- **Speculation is last.** `bp_taken` is a guess about the instruction being fetched right now; it loses to any resolved fact about an older instruction.
+
+`bp_miss` and `ex_jump` are mutually exclusive in practice, so their relative order is free — but both must sit above `pc_stall`.
+
+**Note `pc_controller` takes `if_pc`, not `pc+4`.** The separate `PCplus4` path feeds the *pipeline*
+(`IF/ID.PC+4` → … → the link writeback at `mem_to_reg = 2'd2`). `pc_controller` does its own `+4` for
+the sequential case. Two adders, two consumers — don't share them.
+
 ### Tasks
 
 - [ ] `★☆☆ P2` Delete or use `control.v`'s now-unused `DATA_WIDTH`/`REG_WIDTH` parameters
-- [ ] `★☆☆ P0` `rtl/pc_controller.v` — `pc+4`, branch target, `JAL` target, `JALR` target (**remember to clear bit 0**). Pure muxing; no state.
+- [x] ~~`★☆☆ P0` `rtl/pc_controller.v`~~ — **done 23 Aug.** Priority encoder over the redirect qualifiers, see [PC redirect priority](#pc-redirect-priority). Pure muxing, no state, lints clean. The `JALR` bit-0 mask moved into the ALU as `` `ADD_C `` ([D8](#d8-where-the-jalr-bit-0-mask-lives)), so this module does no arithmetic beyond `+4`.
 - [ ] `★★☆ P0` `rtl/control.v` — finish it. Started 22 Aug; R/I/S/B/J/U arms decode, compiles and lints.
   - [ ] `★☆☆ P1` `funct3` — **settled 22 Aug ([D6](#d6-where-sub-word-access-decodes)): `control.v` keeps only control bits; raw `funct3` rides the pipeline to MEM and the memory decodes it.** So the only remaining consumer here is the SYSTEM arm below. Note `alu_controller.v` already decodes all six branch funct3 values, so the branch decision is just `branch && alu_r[0]` — the control unit never needed funct3 for that.
   - [ ] `★★☆ P1` `` `I_TYPE_1 `` (SYSTEM) arm — `csr_write`, plus the `trap_done`/`csr_ready` inputs, which stay unread until it exists. Can slip to Day 3 with the rest of the CSR work.
@@ -305,6 +347,10 @@ Only start this if Monday's exit criteria are met and committed on a tag.
 
 **S2 — Dhrystone 2.1.** Needs the full toolchain, `-O2`, a working `mcycle`/`minstret`, and UART output. Paper's number: 646,640 instructions in 1,043,092 cycles = 1.09 DMIPS/MHz, 1.61 CPI.
 
+**S4 — jump prediction.** Per [D7](#d7-jump-prediction), jumps currently eat the full EX-resolution
+penalty. Redirecting `JAL` in ID halves that; a BTB for `JALR` is the larger version. Measure the CPI
+delta against the D7 baseline rather than assuming it.
+
 **S3 — predictor comparison.** gshare is now the Day 3 design rather than a stretch goal. The stretch version is the *measurement*: build the plain 2-bit PHT (`pht[pc[8:2]]`, no BHR — about 20 lines) as a drop-in alternative and compare mispredict counts and CPI on the same benchmarks. Quantifying what the BHR buys you is the most publishable thing here, and it goes beyond what the paper reports.
 
 ---
@@ -333,6 +379,10 @@ Only start this if Monday's exit criteria are met and committed on a tag.
 - The branch unit in EX reads `r[0]` as its taken/not-taken signal. Wire it that way from the start.
 - `PC` needs the *PC* on the `x` input, not `rs1`. Your EX-stage `x` mux must be able to select PC, and forwarding must **not** override it. Get this wrong and `JAL` links to a forwarded register value.
 
+**Update 23 Aug — `` `ADD_C `` added, `` `PC `` retired.** `JALR` needs `(rs1+imm)` with bit 0 cleared, and that mask now lives in the ALU rather than in `pc_controller` ([D8](#d8-where-the-jalr-bit-0-mask-lives)). Since jumps moved to `` `ADD ``/`` `ADD_C ``, the old `` `PC `` op (`x + 4`) had no remaining producer, so `ADD_C` took its encoding slot and **`alu_op` stayed 4 bits** — no extra bit through `ID/EX`.
+
+The field is now exactly full: 16 ops at values 0–15. A 17th op means widening the port in two modules and the pipeline register, so it is worth a moment's thought rather than a reflex.
+
 Nothing outstanding in this file.
 
 ### B2 — `alu_controller.v`
@@ -355,6 +405,8 @@ Nothing outstanding in this file.
 
 - **`AUIPC` now decodes.** `U_TYPE` was split into `` `U_TYPE_1 `` (LUI, `5'b01101`) and `` `U_TYPE_2 `` (AUIPC, `5'b00101`) in [`riscv_defs.vh`](#d5-shared-constants); both map to `` `ADD ``, and [B6](#b6--instruction_decoderv) gained a matching arm, so it works end to end.
 - **`NOP_TYPE` is gone**, collapsed onto `` `I_TYPE_3 `` when the constants moved to the shared header — same value, and the LOAD→`ADD` mapping stays correct.
+
+**Update 23 Aug.** `` `J_TYPE `` stays on the `` `ADD `` arm — a `JAL` target is inherently even, so it needs no mask — while `` `I_TYPE_2 `` (`JALR`) moved to its own `` `ADD_C `` arm. Port narrowed back to `[3:0]` alongside [B1](#b1--aluv).
 
 **Benign lint warnings** (don't chase these): `funct_7[6,4:0]` and `op_code[1:0]` are legitimately never needed; `I_TYPE_1` (SYSTEM) goes live on Day 3 with CSRs; `DATA_WIDTH` is an unused parameter you can delete.
 
@@ -461,6 +513,30 @@ What it costs:
 
 - **`dmem.v` and the cache both implement it.** Loads are P0 and the cache is P2, so the logic gets written twice — two implementations of one interface contract, not waste, but budget for it.
 - **The cache is nowhere near ready for this.** See the blocker at the top of [Day 4](#day-4--tuesday-cache-integration-p2).
+
+### D8. Where the `JALR` bit-0 mask lives
+
+**✅ Settled 23 Aug — in the ALU, as `` `ADD_C ``.** The spec requires the `JALR` target to be
+`(rs1 + imm)` with bit 0 forced to zero. Two places could do it: `pc_controller` masking the target on
+the jump path, or a dedicated ALU op.
+
+The ALU won because it keeps `pc_controller` a pure mux with no arithmetic beyond `+4`, and because the
+masked value is then what every consumer sees rather than only the PC path. `JAL` stays on plain
+`` `ADD ``, since a J-format immediate always has bit 0 clear.
+
+It cost nothing in width: `` `PC `` (`x + 4`) became dead when jumps moved to the ALU for target
+calculation, so `` `ADD_C `` took its slot and `alu_op` stayed 4 bits. See [B1](#b1--aluv).
+
+### D7. Jump prediction
+
+**✅ Settled 23 Aug — jumps are not predicted; accept the EX-resolution penalty.** The predictor gates
+`history_read` on `` `B_TYPE `` ([B3](#b3--branch_predictorv)), so `JAL`/`JALR` always resolve in EX and
+cost the full ~2-cycle bubble. This matches the paper and keeps the redirect path single-sourced.
+
+Revisit only once the full pipeline is working. A `JAL` target is computable in ID (it needs no
+register), so redirecting there costs 1 bubble instead of 2 — but it adds a second redirect source and
+another priority tier to [PC redirect priority](#pc-redirect-priority), which is not a thing to be
+debugging alongside the hazard unit.
 
 ### D3. `x0` handling location
 Hardwire in the register file (B4-2) rather than special-casing in the control path. One place, impossible to forget.

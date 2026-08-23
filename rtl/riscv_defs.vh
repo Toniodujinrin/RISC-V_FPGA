@@ -11,7 +11,8 @@
 
 
 //-----------------------------------------------------------------------------
-// ALU operation codes -- 4 bits, the alu_op port between alu_controller and alu
+// ALU operation codes -- 4 bits, the alu_op port between alu_controller and alu.
+// Exactly 16 values, so the field is full: a 17th op means widening it.
 //-----------------------------------------------------------------------------
 `define NON   4'd0
 `define ADD   4'd1
@@ -24,13 +25,11 @@
 `define SRA   4'd8
 `define LT    4'd9
 `define LTU   4'd10
-`define PC    4'd11
+`define ADD_C 4'd11  // JALR: (rs1+imm) with bit 0 cleared
 `define GTE   4'd12
 `define GTEU  4'd13
 `define NEQ   4'd14
 `define EQ    4'd15
-
-
 //-----------------------------------------------------------------------------
 // Instruction classes -- op_code[6:2].
 // The low two bits of a 32-bit RV32I instruction are always 2'b11 and carry no

@@ -23,7 +23,7 @@ always@(*)
 begin 
   alu_op = `NON; 
   casez({op_code[OP_CODE_WIDTH-1:2],funct_7[5],funct_3})
-    {`S_TYPE, 1'b?, 3'b???},{`I_TYPE_3, 1'b?, 3'b???}, {`U_TYPE_1, 1'b?, 3'b???}, {`U_TYPE_2, 1'b?, 3'b???}, {`R_TYPE, 1'b0, 3'b000}, {`I_TYPE_4, 1'b?, 3'b000}: 
+    {`S_TYPE, 1'b?, 3'b???},{`I_TYPE_3, 1'b?, 3'b???}, {`U_TYPE_1, 1'b?, 3'b???}, {`U_TYPE_2, 1'b?, 3'b???}, {`R_TYPE, 1'b0, 3'b000}, {`I_TYPE_4, 1'b?, 3'b000},{`J_TYPE, 1'b?, 3'b???}: 
       alu_op = `ADD; 
     {`R_TYPE, 1'b1,3'b000}: //Subtract
       alu_op = `SUB; 
@@ -47,12 +47,12 @@ begin
       alu_op = `EQ;    
     {`B_TYPE, 1'b?, 3'b001}: // BNE
       alu_op = `NEQ;  
-    {`J_TYPE, 1'b?, 3'b???}, {`I_TYPE_2, 1'b?, 3'b???}:  // JAL and JALR 
-      alu_op = `PC; 
     {`B_TYPE, 1'b?, 3'b101}: // BGE
       alu_op = `GTE;
     {`B_TYPE, 1'b?, 3'b111}: // BGEU
       alu_op = `GTEU;  
+    {`I_TYPE_2, 1'b?, 3'b???}:  
+      alu_op = `ADD_C; 
     default:
       alu_op = `NON;
   endcase
