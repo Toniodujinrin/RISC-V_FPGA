@@ -61,13 +61,6 @@ end
 endmodule
 
 
-// TODO: AUIPC is not decoded. `U_TYPE (5'b01101) is LUI only; AUIPC is opcode
-// 0010111, i.e. op_code[6:2] == 5'b00101. `AUIPC_TYPE is already defined in
-// riscv_defs.vh -- it just isn't matched here, so AUIPC falls through to
-// default -> `NON and the ALU returns 0 instead of the PC-relative sum. Put
-// `AUIPC_TYPE on the `ADD arm alongside `U_TYPE. Note instruction_decoder.v is
-// missing the same opcode, so both need fixing before AUIPC works end to end.
-
 // RESOLVED 22 Aug: NOP_TYPE is gone. It held 5'b00000, which is the LOAD
 // opcode and was a duplicate of I_TYPE_3; both collapsed onto `I_TYPE_3 when
 // the constants moved to riscv_defs.vh. Mapping it to `ADD stays correct --

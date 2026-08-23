@@ -35,18 +35,26 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 
 | File | Lines | Compiles | Status |
 |---|---|---|---|
-| `rtl/alu.v` | 57 | ✅ | **Done 22 Aug** — lints clean under `-Wall`. See [B1](#b1--aluv) |
-| `rtl/alu_controller.v` | 100 | ✅ | **Done 22 Aug** — 2 TODOs left in-file. See [B2](#b2--alu_controllerv) |
-| `rtl/branch_predictor.v` | 124 | ✅ | **Done 22 Aug** — gshare, lints to 1 benign warning. See [B3](#b3--branch_predictorv) |
-| `rtl/register_file.v` | 45 | ✅ | **Done 22 Aug** — 32 regs, `x0` hardwired, cocotb 100/100. See [B4](#b4--register_filev) |
+| `rtl/riscv_defs.vh` | 49 | — | Shared ALU ops + instruction classes. See [D5](#d5-shared-constants) |
+| `rtl/alu.v` | 42 | ✅ | **Done 22 Aug** — lints clean under `-Wall`. See [B1](#b1--aluv) |
+| `rtl/alu_controller.v` | 67 | ✅ | **Done 22 Aug** — all TODOs closed. See [B2](#b2--alu_controllerv) |
+| `rtl/branch_logic.v` | 35 | ✅ | **Done 23 Aug** — EX-stage resolve, lints clean, 5/5 directed cases |
+| `rtl/branch_predictor.v` | 125 | ✅ | **Done 22 Aug** — gshare, lints to 1 benign warning. See [B3](#b3--branch_predictorv) |
+| `rtl/register_file.v` | 43 | ✅ | **Done 22 Aug** — 32 regs, `x0` hardwired, cocotb 100/100. See [B4](#b4--register_filev) |
 | `rtl/forwarding_unit.v` | 40 | ✅ | **Done 22 Aug** — lints clean. See [B5](#b5--forwarding_unitv) |
-| `rtl/instruction_decoder.v` | 89 | ✅ | Missing AUIPC + shift-imm `funct_7`. See [B6](#b6--instruction_decoderv) |
-| `rtl/l1.v` | 894 | ✅ | 4-way cache + WB FIFO + arbiter. Standalone TB exists |
-| `rtl/control.v` | 0 | — | **empty** |
-| `rtl/pc_controller.v` | 0 | — | **empty** |
+| `rtl/instruction_decoder.v` | 100 | ✅ | **Done 22 Aug** — decode verified, suite still to write. See [B6](#b6--instruction_decoderv) |
+| `rtl/l1.v` | 894 | ✅ | 4-way cache + WB FIFO + arbiter. Standalone TB exists. **Byte-only data path — cannot do `LW`**, see [Day 4](#day-4--tuesday-cache-integration-p2) |
+| `rtl/control.v` | 94 | ✅ | **Started 22 Aug** — opcode decode only; no SYSTEM arm yet |
+| `rtl/pc_controller.v` | 23 | ❌ | in progress, does not compile yet |
+| `rtl/inst_mem.v` | 0 | — | **empty** |
+| `rtl/data_mem.v` | 0 | — | **empty** |
 | `rtl/hazard_detector.v` | 0 | — | **empty** |
+| `rtl/IF_ID_reg.v` | 0 | — | **empty** |
+| `rtl/ID_EX_reg.v` | 14 | ❌ | stub, port list incomplete |
+| `rtl/EX_MEM_reg.v` | 0 | — | **empty** |
+| `rtl/MEM_WB_reg.v` | 0 | — | **empty** |
 
-**There are zero commits in this repo.** First action of Day 0 is `git commit`. You are about to do heavy refactoring with no undo.
+**Committed through `6c91be6` ("added control unit").** Note that cocotb build artifacts are tracked — `__pycache__/`, `sim_build/`, `*.vcd`, `results.xml` — so every simulation run dirties the tree. Worth a `.gitignore` + `git rm --cached` before the diffs start mattering for debugging.
 
 ---
 
@@ -70,30 +78,72 @@ The one deviation I'd make from the paper's order: **do the pipeline before CSR/
 
 ---
 
+## How the daily tasks are ranked
+
+Every task below carries two badges, and within each day the tasks are **ordered easiest first**.
+
+| Difficulty | Meaning |
+|---|---|
+| `★☆☆` | Mechanical. Minutes. No design decision to make. |
+| `★★☆` | Moderate. An hour or two. Needs care, but the shape is known. |
+| `★★★` | Hard. Half a day or more. This is where the bugs live. |
+
+| Importance | Meaning |
+|---|---|
+| `P0` | Blocks everything downstream. The day fails without it. |
+| `P1` | Required for paper parity. |
+| `P2` | Optional. First to go — see [If you fall behind](#if-you-fall-behind). |
+
+Start each day at the top and work down: the cheap items build momentum and, more usefully, they shrink the surface area you're debugging when you hit the hard one. Where a **⚠** appears, the item's position is forced by a dependency rather than by difficulty — you cannot do it earlier even though it is easy.
+
+---
+
 ## Day 0 — Saturday morning, unblock (~3 h)
 
-- [ ] **`git init` is done but nothing is committed.** Commit the current tree as-is, right now, before touching anything.
+- [ ] `★☆☆ P0` **Stop tracking build artifacts.** Every simulation run currently dirties the tree, which will bury the real diffs exactly when you need them for debugging.
   ```bash
-  printf '.venv/\n*.vcd\nsim_build/\n__pycache__/\nresults.xml\n' > .gitignore
-  git add -A && git commit -m "Initial import: partial RV32I modules, L1 cache, TBs"
+  printf '.venv/\n.claude/\n*.vcd\n*.fst\nsim_build/\n__pycache__/\nresults.xml\nlogfile.txt\n' > .gitignore
+  git rm -r --cached tb/cocotb/register_file/{__pycache__,sim_build} \
+                     tb/cocotb/register_file/{register_file_dump.vcd,results.xml,logfile.txt}
+  git commit -m "Stop tracking cocotb build artifacts"
   ```
-- [ ] **Get a RISC-V toolchain.** You need it to produce test programs; without it you're hand-assembling hex by Sunday.
+- [ ] `★☆☆ P1` **Commit after each module.** Small commits are your bisect trail. When the pipeline misbehaves on Sunday, `git bisect` against the single-cycle core is the fastest way to find the change that did it.
+- [ ] `★★☆ P0` **Build the regression harness now, not later.** One command you run after every change:
+  ```bash
+  # scripts/lint.sh — must stay clean all weekend
+  # -Irtl is REQUIRED: modules `include "riscv_defs.vh" (see D5)
+  verilator --lint-only -Wall -Irtl --top-module <mod> rtl/<mod>.v
+  iverilog -g2001 -I rtl -o /dev/null rtl/<mod>.v
+  ```
+  Add a `Makefile` at the root with `make lint`, `make test` (runs every cocotb suite), `make wave`. A 30-minute investment that pays back by Sunday afternoon. Any cocotb Makefile for a module that includes the header needs `VERILOG_INCLUDE_DIRS` set, or the build fails with `Include file riscv_defs.vh not found`.
+- [ ] `★★☆ P0` **Get a RISC-V toolchain.** Needed to produce test programs; without it you are hand-assembling hex by Sunday.
   ```bash
   sudo apt install gcc-riscv64-unknown-elf   # then use -march=rv32i -mabi=ilp32
   ```
-  If the Debian package won't target rv32i cleanly, fall back to `pip install riscv-assembler` for small hand-written tests, and defer the full toolchain to S2 when Dhrystone actually needs it.
-- [ ] **Build a regression harness now, not later.** One script you run after every change:
-  ```bash
-  # scripts/lint.sh — must stay clean all weekend
-  verilator --lint-only -Wall --top-module <mod> rtl/<mod>.v
-  ```
-  Add a `Makefile` at the root with `make lint`, `make test` (runs every cocotb suite), `make wave`. A 30-minute investment that pays back by Sunday afternoon.
-- [x] ~~**Fix `alu.v` and `alu_controller.v`**~~ — [B1](#b1--aluv), [B2](#b2--alu_controllerv) done 22 Aug. Both compile under `-g2001` and `-g2012`; `alu.v` lints clean under `verilator -Wall`.
-- [x] ~~**Fix `branch_predictor.v`**~~ — [B3](#b3--branch_predictorv) done 22 Aug. All 7 syntax defects closed, plus the PHT index mismatch that would have stopped it learning at all.
-- [x] ~~**Fix the widths**~~ — [B4](#b4--register_filev), [B5](#b5--forwarding_unitv) done 22 Aug. Both at `ADDR_WIDTH = 5`, both lint clean, `x0` hardwired and verified by cocotb.
-- [ ] Commit after each module. Small commits are your bisect trail.
+  **Highest-variance item on this list** — it is either five minutes or a two-hour rabbit hole. Timebox it. If the Debian package will not target rv32i cleanly, fall back to `pip install riscv-assembler` for small hand-written tests and defer the real toolchain to S2, when Dhrystone actually needs it. Do not let this block the harness above.
 
-**Exit criteria:** `make lint` is clean across all of `rtl/`, every non-empty module compiles, cocotb passes on `register_file` and `alu`.
+**Done 22 Aug:**
+
+- [x] ~~`★★☆ P0` **Fix `alu.v` and `alu_controller.v`**~~ — [B1](#b1--aluv), [B2](#b2--alu_controllerv). Both compile under `-g2001` and `-g2012`; `alu.v` lints clean under `verilator -Wall`.
+- [x] ~~`★★★ P0` **Fix `branch_predictor.v`**~~ — [B3](#b3--branch_predictorv). All 7 syntax defects closed, plus the PHT index mismatch that would have stopped it learning at all.
+- [x] ~~`★☆☆ P0` **Fix the widths**~~ — [B4](#b4--register_filev), [B5](#b5--forwarding_unitv). Both at `ADDR_WIDTH = 5`, `x0` hardwired and verified by cocotb.
+- [x] ~~`★★☆ P1` **Extract shared constants**~~ — [D5](#d5-shared-constants). 51 duplicated localparams collapsed into `rtl/riscv_defs.vh`.
+
+**Exit criteria:** `make lint` is clean across all of `rtl/`, every non-empty module compiles, cocotb passes on `register_file`.
+
+| Suite | State | Covers |
+|---|---|---|
+| `tb/cocotb/register_file` | ✅ 100 random, passing | read/write, `x0` hardwiring |
+| `tb/tb_ctrl.v`, `tb/tb_l1.v` | ✅ directed | L1 write-back path, FIFO-full drain |
+| `tb/cocotb/instruction_decoder` | ❌ **to write** | every format's immediate, shift-imm `funct_7`, the LOAD/SYSTEM funct_3 collision |
+| `tb/cocotb/alu` | ❌ **to write** | all 16 ops, signed compares, `SRA` sign-fill, shamt masking |
+
+**Cases the decoder suite must cover** — the decode fix on 22 Aug was verified against these, so they are known to discriminate:
+
+- `SRAI` vs `SRLI` at the same funct_3 — `funct_7[5]` must reach the ALU controller
+- `LH`, `LHU`, `CSRRW`, `CSRRWI` — funct_3 001/101 collides with the shifts, and their 12-bit immediates must not truncate to a 5-bit shamt
+- `ADDI` at −2048 and +2047 — sign-extension boundaries
+- S/B/J immediates at their extremes, since the bit-scrambling in those formats is where transcription errors hide
 
 ### Testbench gotchas — learned the hard way on `register_file`, 22 Aug
 
@@ -103,6 +153,8 @@ Reusable for every cocotb monitor you write from here (core, cache, predictor):
 - **`always @(*)` on `mem[addr]` is sensitive to the whole array**, not just `addr`. That is why the write is visible to the read in the same timestep at all.
 - **Waves belong in the Makefile, not the RTL.** `WAVES ?= 1` makes cocotb build its own dump module and write FST to `sim_build/`. `$dumpfile` in an RTL module collides as soon as a second testbench opens its own file, and only one can win.
 - **A golden model that reads-then-writes is correct for this design.** Don't reorder it to chase a mismatch — check the sampling point first.
+- **Compute expectations from the spec, not from the RTL.** The decoder suite re-derives every immediate from the RV32I encoding rules. Mirroring the RTL's own expression would make a wrong implementation agree with a wrong expectation.
+- **Mutation-test any suite you're relying on.** Re-introduce the bug it was written to catch, in a scratch copy of the RTL, and confirm it fails. Done for the 22 Aug decode fix: reverting the shift-immediate guard produced exactly 4 failures — `SRAI` ×2, `LH`, `CSRRW`. A suite that cannot fail is worse than no suite, because it buys false confidence.
 
 ---
 
@@ -113,21 +165,29 @@ Reusable for every cocotb monitor you write from here (core, cache, predictor):
 Define the core↔memory contract **now**, in its final stalling form, even though today's memory is a single-cycle RAM that never stalls:
 
 ```verilog
-// core drives:  req_valid, req_write, req_addr, req_wdata, req_wstrb
+// core drives:  req_valid, req_write, req_addr, req_wdata, req_funct3
 // memory drives: req_ready, resp_valid, resp_rdata
 // core must hold the request stable while (req_valid && !req_ready)
+//
+// req_funct3 carries the RV32I load/store funct3 verbatim: [1:0] is the width
+// (00 byte, 01 half, 10 word) and [2] selects zero-extension on loads. The
+// memory owns sub-word selection and sign/zero-extension -- see D6.
 ```
 
-Today, tie `req_ready = 1` and `resp_valid = 1` in a trivial `$readmemh` RAM. On Tuesday, `rtl/l1.v` drops in unchanged (its `cpu_ready_out` / `cpu_data_out_valid` ports already speak this protocol) and the pipeline's stall logic is already written and tested. **If you skip this and hardwire single-cycle memory, P2 costs you a full day instead of an evening.**
+Today, tie `req_ready = 1` and `resp_valid = 1` in a trivial `$readmemh` RAM that decodes `req_funct3` itself. On Tuesday the cache slots in behind the same contract — its `cpu_ready_out` / `cpu_data_out_valid` ports already speak the handshake half of this protocol, so the pipeline's stall logic is written and tested by then. **If you skip this and hardwire single-cycle memory, P2 costs you a full day instead of an evening.**
+
+The cache does *not* drop in unchanged, though: it has no size input and a byte-only data path, so it needs the work described at the top of [Day 4](#day-4--tuesday-cache-integration-p2) before it can serve a single `LW`. What the interface decision buys you is that the *pipeline* needs no surgery — the change is confined to the memory.
 
 ### Tasks
 
-- [ ] `rtl/control.v` — main decode: `RegWrite`, `MemRead`, `MemWrite`, `MemToReg`, `ALUSrc`, `Branch`, `Jump`, `ALUOp`. Drive from `op_code` only.
-- [x] ~~`rtl/alu_controller.v` — extend past R-type~~ — done 22 Aug. Loads/stores/`LUI`/`JAL`/`JALR` map to `ADD`/`PC`, all six branches map to compare ops. **`AUIPC` still missing** (TODO in-file).
-- [ ] `rtl/pc_controller.v` — `pc+4`, branch target, `JAL` target, `JALR` target (**remember to clear bit 0**)
-- [ ] `rtl/imem.v`, `rtl/dmem.v` — `$readmemh`-loaded, behind the interface above. `dmem` needs byte strobes for `SB`/`SH` and sign/zero-extension for `LB`/`LH`/`LBU`/`LHU`.
-- [ ] `rtl/core_single.v` — top-level datapath wiring it all together
-- [ ] `tb/cocotb/core_single/` — self-checking: load a `.hex`, run N cycles, assert final register/memory state
+- [ ] `★☆☆ P2` Delete or use `control.v`'s now-unused `DATA_WIDTH`/`REG_WIDTH` parameters
+- [ ] `★☆☆ P0` `rtl/pc_controller.v` — `pc+4`, branch target, `JAL` target, `JALR` target (**remember to clear bit 0**). Pure muxing; no state.
+- [ ] `★★☆ P0` `rtl/control.v` — finish it. Started 22 Aug; R/I/S/B/J/U arms decode, compiles and lints.
+  - [ ] `★☆☆ P1` `funct3` — **settled 22 Aug ([D6](#d6-where-sub-word-access-decodes)): `control.v` keeps only control bits; raw `funct3` rides the pipeline to MEM and the memory decodes it.** So the only remaining consumer here is the SYSTEM arm below. Note `alu_controller.v` already decodes all six branch funct3 values, so the branch decision is just `branch && alu_r[0]` — the control unit never needed funct3 for that.
+  - [ ] `★★☆ P1` `` `I_TYPE_1 `` (SYSTEM) arm — `csr_write`, plus the `trap_done`/`csr_ready` inputs, which stay unread until it exists. Can slip to Day 3 with the rest of the CSR work.
+- [ ] `★★☆ P0` `rtl/imem.v`, `rtl/dmem.v` — `$readmemh`-loaded, behind the stalling interface above. Fiddlier than it looks: `dmem` needs byte strobes for `SB`/`SH` and sign/zero-extension for `LB`/`LH`/`LBU`/`LHU`.
+- [ ] `★★☆ P0` **⚠** `tb/cocotb/core_single/` — self-checking harness: load a `.hex`, run N cycles, assert final register and memory state. Position forced: you want this ready *before* the datapath, so the first thing you do with `core_single.v` is run a program through it rather than stare at waves.
+- [ ] `★★★ P0` `rtl/core_single.v` — top-level datapath wiring it all together. The hard one, and the one everything else today exists to support.
 
 ### Test programs to write today (`tests/asm/`)
 
@@ -149,15 +209,33 @@ Each is ~10 instructions and ends by writing a known value to a known address:
 
 The riskiest day. Budget the whole day; do not add CSRs today no matter how well it's going.
 
-- [ ] **Pipeline registers first, hazards second.** Insert `IF/ID`, `ID/EX`, `EX/MEM`, `MEM/WB` with no forwarding and no hazard logic. Verify with a test where every instruction is separated by 4 `NOP`s — all 7 Day-1 programs must pass in NOP-padded form. This isolates "did I wire the pipeline right" from "did I get hazards right".
-- [ ] **`rtl/forwarding_unit.v`** — already written and logically correct (EX/MEM priority over MEM/WB is right). Just needs the width fix. Wire it in, remove the NOP padding from the arithmetic tests.
-- [ ] **`rtl/hazard_detector.v`** — the empty file. Two jobs:
-  - **Load-use stall:** `ID/EX.MemRead && (ID/EX.rd == IF/ID.rs1 || ID/EX.rd == IF/ID.rs2)` → stall IF/ID, bubble ID/EX. Forwarding cannot fix this one; the data doesn't exist yet.
-  - **Control flush:** on a taken/mispredicted branch resolved in EX, flush `IF/ID` and `ID/EX`.
-- [ ] **Register file write-first behaviour** — [B4](#b4--register_filev), the one item still open on that module. Reads are combinational as of 22 Aug, but a WB write landing at the end of cycle N is still invisible to an ID read *during* cycle N, and forwarding only covers producers one and two instructions ahead. A distance-3 RAW therefore reads stale. Fix: write on `negedge clk`.
-  - **The `register_file` cocotb suite cannot catch this.** It samples mid-cycle, before the write edge, which is exactly the behaviour that hides the bug. `hazard.S` is what has to catch it — make sure that test includes a dependency at distance 3, not just 1 and 2.
-- [ ] **Static prediction first.** Predict not-taken, resolve in EX, flush on mispredict. Get the pipeline *correct* before making it *fast* — the dynamic predictor is a Monday feature and it can only change performance, never correctness. If it changes correctness, your flush logic is broken.
-- [ ] Re-run all 7 test programs **unpadded**. Add `hazard.S`: back-to-back dependent ALU ops, load-immediately-followed-by-use, branch on a just-computed value, store of a just-loaded value.
+- [ ] `★☆☆ P0` **Register file write-first behaviour** — [B4](#b4--register_filev), the one item still open on that module. Reads are combinational as of 22 Aug, but a WB write landing at the end of cycle N is still invisible to an ID read *during* cycle N, and forwarding only covers producers one and two instructions ahead, so a distance-3 RAW reads stale. Fix: write on `negedge clk`. One word, and it is independent of everything else today — do it first and forget it.
+  - **The `register_file` cocotb suite cannot catch this.** It samples mid-cycle, before the write edge, which is exactly the behaviour that hides the bug. `hazard.S` is what has to catch it — make sure that test includes a dependency at **distance 3**, not just 1 and 2.
+- [ ] `★★☆ P0` **Pipeline registers first, hazards second.** Insert `IF/ID`, `ID/EX`, `EX/MEM`, `MEM/WB` with no forwarding and no hazard logic. Verify with a test where every instruction is separated by 4 `NOP`s — all 7 Day-1 programs must pass in NOP-padded form. This isolates "did I wire the pipeline right" from "did I get hazards right", and that separation is what keeps Sunday from becoming an undebuggable mess.
+- [ ] `★☆☆ P0` **⚠** **Wire in `rtl/forwarding_unit.v`** — already written, lint-clean, and logically correct (EX/MEM priority over MEM/WB is right). Just connect it and drop the NOP padding from the arithmetic tests. Easy, but it cannot happen before the pipeline registers exist.
+- [ ] `★☆☆ P0` **⚠** **Wire in `rtl/branch_logic.v`** — written 23 Aug, lints clean, 5/5 directed cases pass. Easy, but it needs `EX_pc`/`EX_imm` out of `ID/EX`, so the pipeline registers must exist first. See [Branch resolution in EX](#branch-resolution-in-ex) for what it needs from the pipeline registers.
+- [ ] `★★☆ P0` **Static prediction.** Tie `branch_prediction = 0` (predict not-taken), resolve in EX, flush on `prediction_miss`. Get the pipeline *correct* before making it *fast* — the dynamic predictor is a Monday feature and can only change performance, never correctness. If it changes correctness, your flush logic is broken. With `branch_logic` already in place, switching to the real predictor on Monday is just changing what drives `branch_prediction`.
+- [ ] `★★☆ P0` **⚠** Re-run all 7 test programs **unpadded**, then add `hazard.S`: back-to-back dependent ALU ops, load-immediately-followed-by-use, branch on a just-computed value, store of a just-loaded value, and a **distance-3 dependency** for the write-first path above. Last by dependency, not difficulty.
+- [ ] `★★★ P0` `rtl/hazard_detector.v` — the empty file, and the hardest thing you will write this weekend. Two jobs:
+  - **Load-use stall:** `ID/EX.MemRead && (ID/EX.rd == IF/ID.rs1 || ID/EX.rd == IF/ID.rs2)` → stall IF/ID, bubble ID/EX. Forwarding cannot fix this one; the data does not exist yet.
+  - **Control flush:** on a taken or mispredicted branch resolved in EX, flush `IF/ID` and `ID/EX`.
+
+### Branch resolution in EX
+
+`rtl/branch_logic.v` is the paper's **Branch Logic** block (Fig. 2), resolving branches in EX:
+
+```
+in:  branch, EX_pc, EX_imm, alu_cond, branch_prediction
+out: prediction_miss, branch_target_actual, branch_taken
+```
+
+Three things to hold onto when wiring it:
+
+- **`branch_target_actual` is the *recovery* target, not "the branch target".** It is `EX_pc + 4` by default and `EX_pc + EX_imm` only when actually taken, which is what `pc_controller` needs in **both** mispredict directions. A design that only produces `pc + imm` has no way back when it predicted taken and the branch wasn't.
+- **`alu_cond` is not the paper's `ALUzero`.** The paper's ALU subtracts and Branch Logic combines `ALUzero` with `funct3`; yours computes the condition directly (`` `EQ ``/`` `NEQ ``/`` `LT ``/`` `LTU ``/`` `GTE ``/`` `GTEU ``), so `alu_cond` is `alu_r[0]` and is already the taken decision. Same wire position in the diagram, different meaning.
+- **`EX_pc` must be the branch's own PC**, carried in `ID/EX` — not the fetch PC. Wiring `IF.PC` here produces silently wrong targets that look like a predictor bug.
+
+`prediction_miss` drives the flush; `branch_taken` trains the predictor (the paper's `EX.BTaken`); `branch` itself is the update enable (`EX.branch`).
 
 **Exit criteria:** all Day-1 programs pass unpadded on the pipelined core, and its final architectural state matches the single-cycle core cycle-for-cycle at retirement.
 
@@ -171,26 +249,27 @@ The riskiest day. Budget the whole day; do not add CSRs today no matter how well
 
 What's left here is integration, not the predictor itself:
 
-- [ ] **Decide the `history_read` gating question first** ([B3](#b3--branch_predictorv), "still open"). Everything below depends on it.
-- [ ] Wire the prediction port into IF; wire the update port to branch resolution in EX
-- [ ] Carry `{prediction_out, prediction_index, bhr_snap_index}` through `IF/ID` and `ID/EX` — that's 9 + `$clog2(BHR_SNAPS)` bits per in-flight branch
-- [ ] On mispredict in EX: flush, assert `history_write` with `predicted_index`/`predicted_in`/`predicted_snap_index` from the pipeline registers
-- [ ] Verify: a loop of 100 iterations should mispredict ~2 times, not ~100. Count mispredicts in the TB and assert on the number.
-- [ ] Verify the PHT actually trains: a branch that alternates taken/not-taken should settle, and a consistently-taken branch should reach `2'b11`. This is the test that would have caught the index bug.
+- [ ] `★☆☆ P0` **⚠** **Gate `history_read` on a fetch-word pre-decode** — decided 23 Aug from Fig. 2 ([B3](#b3--branch_predictorv)): `history_read = (inst[6:2] == `B_TYPE)`. Not optional; `branch_logic.v` cannot recover from a prediction made on a non-branch. Everything below depends on it.
+- [ ] `★☆☆ P1` Extract the B-type immediate in IF for `B_Target` — the paper's predictor computes the target itself from `IF.PC`/`IF.imm`; yours doesn't, so either `pc_controller` does `PC + imm` or the predictor gains the port. Pure bit-shuffling of the fetch word, no decode needed.
+- [ ] `★☆☆ P1` Carry `{prediction_out, prediction_index, bhr_snap_index}` through `IF/ID` and `ID/EX` — 9 + `$clog2(BHR_SNAPS)` bits per in-flight branch. Widening two registers.
+- [ ] `★★☆ P1` Wire the prediction port into IF and the update port into branch resolution in EX
+- [ ] `★★☆ P1` On mispredict in EX: flush, and assert `history_write` with `predicted_index`/`predicted_in`/`predicted_snap_index` taken from the pipeline registers
+- [ ] `★★☆ P1` Verify it *predicts*: a loop of 100 iterations should mispredict ~2 times, not ~100. Count mispredicts in the TB and assert on the number.
+- [ ] `★★☆ P1` Verify it *trains*: a consistently-taken branch should reach `2'b11`, and an alternating branch should settle. This is the test that would have caught the index bug — a predictor that never learns still produces correct results, so only a test like this can tell you it is working.
 
 **Fallback:** if predictor integration is still fighting you by Monday lunchtime, fall back to static predict-not-taken and move to CSRs. The predictor only affects CPI, never correctness — if it changes a program's result, your flush logic is wrong, not your predictor.
 
 ### Afternoon: Zicsr → RV32I43F
 
-- [ ] `rtl/csr_file.v` — at minimum `mstatus`, `mtvec`, `mepc`, `mcause`, `mie`, `mip`, and **`mcycle`/`minstret`** (you need these two for the DMIPS measurement in S2)
-- [ ] `CSRRW`/`CSRRS`/`CSRRC` + immediate forms, decoded from `I_TYPE_1` (`op_code = 1110011`)
-- [ ] CSR writes are a hazard source too — a CSR read in ID after a CSR write in EX needs forwarding or a stall. Simplest correct answer under deadline: **stall**.
+- [ ] `★☆☆ P1` CSR writes are a hazard source too — a CSR read in ID after a CSR write in EX needs forwarding or a stall. Under deadline the simplest correct answer is **stall**.
+- [ ] `★★☆ P1` `rtl/csr_file.v` — at minimum `mstatus`, `mtvec`, `mepc`, `mcause`, `mie`, `mip`, and **`mcycle`/`minstret`** (you need those two for the DMIPS measurement in S2)
+- [ ] `★★☆ P1` `CSRRW`/`CSRRS`/`CSRRC` plus the immediate forms, decoded from `` `I_TYPE_1 `` (`op_code = 1110011`). Needs [B6](#b6--instruction_decoderv) item 3 — the decoder does not extract the `csr`/`zimm` fields yet.
 
 ### Evening: traps → RV32I46F
 
-- [ ] `rtl/exception_detector.v` — illegal instruction, misaligned load/store, misaligned instruction address, `ECALL`, `EBREAK`
-- [ ] `rtl/trap_controller.v` — on trap: save `PC`→`mepc`, cause→`mcause`, jump to `mtvec`, flush the pipeline. `MRET` restores.
-- [ ] Test: `trap.S` — trigger `ECALL`, land in a handler at `mtvec`, `MRET` back, verify execution continues at `mepc+4`.
+- [ ] `★★☆ P1` `rtl/exception_detector.v` — illegal instruction, misaligned load/store, misaligned instruction address, `ECALL`, `EBREAK`
+- [ ] `★★☆ P1` `trap.S` — trigger `ECALL`, land in a handler at `mtvec`, `MRET` back, verify execution resumes at `mepc+4`
+- [ ] `★★★ P1` `rtl/trap_controller.v` — on trap: save `PC`→`mepc`, cause→`mcause`, jump to `mtvec`, flush the pipeline; `MRET` restores. Hard because it is a second control-flow override racing the branch flush you built on Sunday — get the priority between them right.
 
 **Exit criteria:** paper feature-parity for the core. **This is the point where you can legitimately say the project is done.** Everything after is bonus.
 
@@ -200,12 +279,17 @@ What's left here is integration, not the predictor itself:
 
 Only start this if Monday's exit criteria are met and committed on a tag.
 
-- [ ] `git tag rv32i46f-5sp-verified` — a known-good point to return to
-- [ ] Wire `cache_controller` from `rtl/l1.v` in as the **data** memory only. Leave instruction fetch on the simple RAM. One variable at a time.
-- [ ] Pipeline must stall on `!cpu_ready_out` and wait for `cpu_data_out_valid`. Your Day-1 interface decision means this is a hazard-unit change, not a datapath change.
-- [ ] You need a backing-memory model with realistic latency (`mem_ready` deasserted for N cycles) — `tb/tb_ctrl.v` already has the shape of one to borrow.
-- [ ] Re-run the **entire** test suite. A cache is a correctness-neutral optimisation: if any test changes result, the cache or the stall path is wrong.
-- [ ] Only then consider the instruction side.
+- [ ] `★☆☆ P0` `git tag rv32i46f-5sp-verified` — a known-good point to return to. Do this before touching anything.
+- [ ] `★★★ P2` **⚠ BLOCKER — sub-word access in the cache.** Position forced and it is the hardest item of the day: nothing below can proceed until this is done, because the cache cannot currently service an `LW`. As written, `rtl/l1.v` is **byte-only**:
+  - `l1.v:848` reads one byte and zero-extends it — that is exactly `LBU`, and there is no path that returns a full word
+  - `l1.v:857` writes one byte — that is exactly `SB`
+  - Needed: a size/signedness input on **both** `cache` and `cache_controller` (the outer CPU port has no such signal at all), a read path that selects byte/half/word by `byte_index_r` and sign- **or** zero-extends, and a byte-enable read-modify-write covering 1, 2 or 4 bytes
+  - **Re-read the P2 decision in light of this.** It is materially more work than "wire the cache in", and [If you fall behind](#if-you-fall-behind) already puts P2 first on the chopping block.
+- [ ] `★☆☆ P2` **⚠** Re-run the **entire** test suite after wiring. A cache is a correctness-neutral optimisation: if any test changes result, the cache or the stall path is wrong, not the test. Trivial to run, last by dependency.
+- [ ] `★★☆ P2` Build a backing-memory model with realistic latency (`mem_ready` deasserted for N cycles) — `tb/tb_ctrl.v` already has the shape of one to borrow
+- [ ] `★★☆ P2` Wire `cache_controller` from `rtl/l1.v` in as the **data** memory only. Leave instruction fetch on the simple RAM — one variable at a time.
+- [ ] `★★☆ P2` Pipeline must stall on `!cpu_ready_out` and wait for `cpu_data_out_valid`. Your Day-1 interface decision makes this a hazard-unit change, not a datapath change.
+- [ ] `★★★ P2` Only then consider the instruction side. Two independent stall sources into the same pipeline is materially harder than one.
 
 **Risk:** the cache's `BLOCK_BITS = 512` block against a 32-bit core means a miss moves 64 bytes. Make sure the miss path and the write-back FIFO drain logic are exercised — `tb/tb_ctrl.v` covers FIFO-full drain, which is the nastiest case, so that TB is worth trusting.
 
@@ -267,10 +351,10 @@ Nothing outstanding in this file.
 | 8 | `defualt` typo parsed as a case *item*, not the default arm | fixed 22 Aug |
 | 9 | `JALR` never matched — only `J_TYPE` (JAL) was on the `PC` arm, so `JALR` returned 0 as its link value | fixed 22 Aug, `I_TYPE_2` added |
 
-**Still open (TODOs are written at the bottom of the file):**
+**✅ Both TODOs closed 22 Aug:**
 
-- **`AUIPC` is not decoded.** `op_code[6:2] == 5'b00101` has no localparam; it falls to `default → NON`. Needs fixing here *and* in [B6](#b6--instruction_decoderv) before `AUIPC` works end to end. Your `lui_auipc.S` test on Day 1 is what will catch this.
-- **`NOP_TYPE` is misnamed** — the value `5'b00000` is the LOAD opcode, duplicating the unused `I_TYPE_3`. Mapping it to `ADD` is correct for load address calculation; only the name is wrong.
+- **`AUIPC` now decodes.** `U_TYPE` was split into `` `U_TYPE_1 `` (LUI, `5'b01101`) and `` `U_TYPE_2 `` (AUIPC, `5'b00101`) in [`riscv_defs.vh`](#d5-shared-constants); both map to `` `ADD ``, and [B6](#b6--instruction_decoderv) gained a matching arm, so it works end to end.
+- **`NOP_TYPE` is gone**, collapsed onto `` `I_TYPE_3 `` when the constants moved to the shared header — same value, and the LOAD→`ADD` mapping stays correct.
 
 **Benign lint warnings** (don't chase these): `funct_7[6,4:0]` and `op_code[1:0]` are legitimately never needed; `I_TYPE_1` (SYSTEM) goes live on Day 3 with CSRs; `DATA_WIDTH` is an unused parameter you can delete.
 
@@ -300,7 +384,9 @@ Nothing outstanding in this file.
 
 **Still open:**
 
-- **`history_read` gating — decide before Day 2 wiring.** The BHR shifts on every fetch where `history_read` is asserted, but at IF you don't yet know the instruction is a branch. Either gate `history_read` with a pre-decode of the fetch word, or accept history pollution from non-branches. This is an integration decision, not a code fix, and it applies to any BHR-based design.
+- **`history_read` gating — ✅ settled 23 Aug from Fig. 2: gate on a pre-decode of the fetch word.** The paper's Branch Predictor takes **`IF.opcode`** as an input, so it only predicts on actual branches and the BHR is never polluted by non-branches. Implement as `history_read = (inst[6:2] == `B_TYPE)` in IF.
+  - **This is now a correctness requirement, not a preference.** [`branch_logic.v`](#branch-resolution-in-ex) reports `prediction_miss = 0` whenever `branch` is low. If an ungated predictor redirects the PC for a non-branch, that instruction reaches EX with `branch = 0`, nothing flushes, and execution continues from the wrong address with no recovery path.
+- **The predictor does not compute `B_Target`; the paper's does.** Fig. 2 shows the Branch Predictor taking `IF.PC` and `IF.imm` and emitting `B_Target` alongside `B.EST`. Yours emits only `prediction_out`/`prediction_index`, so either `pc_controller.v` computes `PC + imm` itself or you add it here. Either way you need the **B-type immediate extracted in IF**, before the decoder runs — pure bit-shuffling of the fetch word (`{{19{inst[31]}}, inst[31], inst[7], inst[30:25], inst[11:8], 1'b0}`), no decode required, but it is logic that does not exist yet.
 - **Naming:** `predicted_valid` (input) vs `prediction_valid` (output) differ by one character and appear in the same expressions. Rename the input to `update_valid`.
 - **Residual one-cycle skew** (won't fix): `current_index` uses `bhr` from the cycle before `prediction_valid` rises, while the snapshot uses `bhr` from the cycle after. Now that the index is carried separately this no longer affects PHT training — it only slightly degrades recovery fidelity.
 - **Pipeline cost:** each in-flight branch must now carry 7 bits of `prediction_index` plus 2 bits of `prediction_out` plus `$clog2(BHR_SNAPS)` bits of snapshot index. Size `IF/ID` and `ID/EX` accordingly.
@@ -332,11 +418,12 @@ One gap for Day 2: a `SW` whose store-data comes from an immediately preceding `
 Note the division of labour with [B4](#b4--register_filev) — this unit's `RD != 0` checks stop a stale *forward* of `x0`, but they never stopped a write to `x0` landing in the file. That required the register file's own hardwiring. Two separate guards; both are needed.
 
 ### B6 — `instruction_decoder.v`
-| | Issue | Fix |
+
+| | Issue | Status |
 |---|---|---|
-| 1 | **`AUIPC` is missing.** `U_TYPE = 5'b01101` is `LUI` only; `AUIPC` is `inst[6:2] = 5'b00101`. `AUIPC` currently decodes to all-zeros. **`alu_controller.v` has the identical gap** — fix both together. | add the opcode |
-| 2 | The I-type branch never sets `funct_7`, so `SRAI` is indistinguishable from `SRLI`. | set `funct_7 = inst_in[31:25]` on the I-type path |
-| 3 | `I_TYPE_1` (SYSTEM) needs the `csr`/`zimm` fields for Day 3 | add when you do CSRs |
+| 1 | **`AUIPC` was missing** — `U_TYPE = 5'b01101` covered `LUI` only | ✅ **Fixed 22 Aug.** Split into `` `U_TYPE_1 `` (LUI) and `` `U_TYPE_2 `` (AUIPC, `5'b00101`), each with its own arm. Both use the same U-format immediate `{inst[31:12], 12'b0}`, so the two arms are identical and could merge |
+| 2 | **The I-type arm never set `funct_7`**, so `SRAI` was indistinguishable from `SRLI` | ✅ **Fixed 22 Aug.** Shift immediates now take `funct_7 = inst_in[31:25]` and a 5-bit shamt. The guard is `inst_in[6:2] == `I_TYPE_4`, which matters: that case arm also covers LOAD and SYSTEM, whose funct_3 of 001/101 (`LH`, `LHU`, `CSRRW`, `CSRRWI`) would otherwise have their immediates truncated to 5 bits |
+| 3 | `` `I_TYPE_1 `` (SYSTEM) needs the `csr`/`zimm` fields | ❌ Open — add on Day 3 with CSRs |
 
 ---
 
@@ -348,6 +435,32 @@ Note the division of labour with [B4](#b4--register_filev) — this unit's `RD !
 
 ### D2. Branch resolution stage
 The paper resolves in EX and flushes 2 stages. Resolving in ID would cost only 1 flush cycle but adds a comparator and more forwarding paths in ID. **Stay with EX** — it matches the paper, and the dynamic predictor is what recovers the CPI anyway.
+
+### D5. Shared constants
+
+**✅ Settled 22 Aug — `rtl/riscv_defs.vh`.** The 16 ALU op codes were duplicated between `alu.v` and `alu_controller.v`, and the instruction classes between `alu_controller.v` and `instruction_decoder.v` — 51 duplicated `localparam` lines. All of it now lives in one guarded header, referenced as `` `ADD ``, `` `R_TYPE `` and so on.
+
+Consequences to remember:
+
+- **Every build needs the include path.** `-I rtl` for iverilog, `-Irtl` for verilator, `VERILOG_INCLUDE_DIRS` for cocotb. Without it: `Include file riscv_defs.vh not found`.
+- **Macros are one global namespace** for the whole compilation, not per-module. `` `ADD ``, `` `OR ``, `` `EQ `` are now reserved project-wide. If third-party or vendor sources ever collide, the escape hatch is a prefix (`` `RV_ADD ``).
+- **Some lint signal was lost.** Verilator used to warn that `I_TYPE_1` was an unused localparam, which was a live reminder that SYSTEM wasn't decoded. Macros aren't tracked that way, so that warning is gone — `alu_controller.v` went 5 → 3 warnings without anything being fixed.
+- `` `AUIPC_TYPE `` was briefly defined and then superseded by `` `U_TYPE_2 ``. Don't reintroduce it.
+
+### D6. Where sub-word access decodes
+
+**✅ Settled 22 Aug — the memory decodes it, not the control unit.** `control.v` emits control bits only; raw `funct3` is carried through `ID/EX` and `EX/MEM` to the MEM stage, and `dmem.v` (Day 1) / the cache (Day 4) do the width selection and sign/zero-extension.
+
+Why it holds up:
+
+- Keeps `control.v` to one job, matching the paper's design principle #2
+- `funct3` in the pipeline is not single-use — the Day 3 `exception_detector` needs the access width to detect misaligned loads and stores, and it will already be there
+- Costs the same 3 pipeline-register bits as sending decoded `mem_size`/`mem_unsigned` would have
+
+What it costs:
+
+- **`dmem.v` and the cache both implement it.** Loads are P0 and the cache is P2, so the logic gets written twice — two implementations of one interface contract, not waste, but budget for it.
+- **The cache is nowhere near ready for this.** See the blocker at the top of [Day 4](#day-4--tuesday-cache-integration-p2).
 
 ### D3. `x0` handling location
 Hardwire in the register file (B4-2) rather than special-casing in the control path. One place, impossible to forget.

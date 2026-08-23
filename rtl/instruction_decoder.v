@@ -43,7 +43,16 @@ module instruction_decoder
         rd = inst_in[11:7]; 
         funct_3 = inst_in[14:12]; 
         rs1 = inst_in[19:15]; 
-        imm = {{20{inst_in[31]}}, inst_in[31:20]}; 
+        
+        if(inst_in[6:2] == `I_TYPE_4 && (funct_3 == 3'b001 || funct_3 == 3'b101))
+        begin 
+          funct_7 = inst_in[31:25]; 
+          imm = {27'b0, inst_in[24:20]}; 
+        end 
+        else
+        begin 
+          imm = {{20{inst_in[31]}}, inst_in[31:20]};
+        end 
       end 
 
       `S_TYPE:

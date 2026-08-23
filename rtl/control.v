@@ -1,15 +1,10 @@
 `include "riscv_defs.vh"
-
 module control
-#(
-  DATA_WIDTH = 32, 
-  REG_WIDTH = 5
-)
 (
-  input [7:0] op_code, 
-  input [3:0] funct3,
+  input [6:0] op_code, 
+  input [2:0] funct3,
   input trap_done, 
-  input csr_ready
+  input csr_ready, 
   output reg pc_stall,
   output reg pc_src, 
   output reg jump, 
@@ -18,11 +13,10 @@ module control
   output reg alu_src_2, 
   output reg mem_read, 
   output reg mem_write, 
-  output reg [REG_WIDTH-1:0] mem_to_reg,  
+  output reg mem_to_reg,  
   output reg reg_write, 
   output reg csr_write, 
-  output reg lui, 
-  output reg pc_src
+  output reg lui
 ); 
 
 
@@ -38,9 +32,11 @@ module control
     mem_to_reg = 0; //write back from memory 
     lui = 0; 
     pc_src = 0; 
+    pc_stall = 0; 
+    csr_write = 0; 
     
 
-    case(op_code)
+    case(op_code[6:2])
      `R_TYPE: 
      begin
       reg_write = 1; 
@@ -77,15 +73,15 @@ module control
         reg_write = 1; 
         jump = 1; 
         alu_src_1 = 1; //take pc bits 
-        pc_src = (op_code == I_TYPE_2) ? 1 : 0; 
+        pc_src = (op_code[6:2] == `I_TYPE_2) ? 1 : 0; 
      end 
 
      `U_TYPE_1, `U_TYPE_2: //LUI, AUPIC  
      begin 
         reg_write = 1; 
         alu_src_2 = 1; 
-        lui = (op_code == `U_TYPE_1) ? 1 : 0;
-        alu_src_1 = (op_code == `U_TYPE_2) ? 1 : 0; 
+        lui = (op_code[6:2] == `U_TYPE_1) ? 1 : 0;
+        alu_src_1 = (op_code[6:2] == `U_TYPE_2) ? 1 : 0; 
      end 
     endcase
   end 
