@@ -33,8 +33,7 @@ module register_file
     read_data_2 = (read_addr_2 == {ADDR_WIDTH{1'b0}})? {DATA_WIDTH{1'b0}} : file[read_addr_2]; 
   end
 
-  //power-up state. the array itself is never reset: ramstyle="logic" infers
-  //distributed RAM, which has no reset port.
+
   integer i; 
   initial 
   begin 

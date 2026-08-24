@@ -2,7 +2,7 @@ module branch_predictor
 #(
   parameter HIST_BITS = 7, 
   parameter BHR_SNAPS = 4,
-  parameter ADDR_BITS = 32
+  parameter DATA_WIDTH = 32
 )
 (
   input clk, reset, 
@@ -16,7 +16,7 @@ module branch_predictor
  
    
   //prediction port
-  input [ADDR_BITS-1:0] pc_bits,
+  input [DATA_WIDTH-1:0] pc_bits,
   input history_read,
   output reg [1:0] prediction_out,
   output reg [HIST_BITS-1:0] prediction_index,

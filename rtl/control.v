@@ -6,7 +6,6 @@ module control
   input trap_done, 
   input csr_ready, 
   output reg pc_stall,
-  output reg pc_src, 
   output reg jump, 
   output reg branch, 
   output reg [1:0] alu_src_1, //00 RD1 | 01 PC | 10 rs1-as-zimm (Day 3, CSR imm)
@@ -29,7 +28,6 @@ module control
     jump = 0; 
     reg_write = 0; // register file write enable 
     mem_to_reg = 3'd0; //writeback source, see encoding above 
-    pc_src = 0; 
     pc_stall = 0; 
     csr_write = 0; 
     

@@ -2,17 +2,19 @@
 
 module instruction_decoder
 #(
-  parameter DATA_WIDTH = 32
+  parameter DATA_WIDTH = 32, 
+  parameter REG_ADDR_WIDTH = 5
 )
 (
   input [DATA_WIDTH-1:0] inst_in, 
   output reg [6:0] op_code,
   output reg [6:0] funct_7, 
   output reg [2:0] funct_3, 
-  output reg [31:0] imm, 
-  output reg [4:0] rs1, 
-  output reg [4:0] rs2, 
-  output reg [4:0] rd
+  output reg [DATA_WIDTH-1:0] r_imm, 
+  output reg [DATA_WIDTH-1:0] imm, 
+  output reg [REG_ADDR_WIDTH-1:0] rs1, 
+  output reg [REG_ADDR_WIDTH-1:0] rs2, 
+  output reg [REG_ADDR_WIDTH-1:0] rd
 ); 
 
 

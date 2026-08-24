@@ -10,8 +10,6 @@ module alu
   input [DATA_WIDTH-1:0] y, 
   output reg [DATA_WIDTH-1:0] r
 );
-  
-
   always@(*)
   begin 
     r = 0; 
@@ -31,13 +29,13 @@ module alu
     `NEQ: r = x == y ? 0 : 1; 
     `EQ: r = x == y? 1 : 0; 
     `NON: r = 0;
-    //JALR target: the spec requires bit 0 of (rs1+imm) be cleared
-    `ADD_C: begin r = $signed(x)+$signed(y); r[0] = 1'b0; end 
+    `ADD_C: 
+    begin 
+      r = $signed(x)+$signed(y); 
+      r[0] = 1'b0;
+    end 
     default: r = 0; 
     endcase
   end
-
-
-
 
 endmodule 

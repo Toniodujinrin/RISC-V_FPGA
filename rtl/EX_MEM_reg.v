@@ -21,7 +21,7 @@ module EX_MEM_reg
 
   //datapath.
   input [DATA_WIDTH-1:0] alu_result, 
-  input [DATA_WIDTH-1:0] rd_2, 
+  input [DATA_WIDTH-1:0] r_data_2, 
   input [DATA_WIDTH-1:0] imm, 
   input [DATA_WIDTH-1:0] r_imm, 
   input [DATA_WIDTH-1:0] pc, 
@@ -44,7 +44,7 @@ module EX_MEM_reg
   output reg em_reg_write, 
   output reg em_csr_write, 
   output reg [DATA_WIDTH-1:0] em_alu_result, 
-  output reg [DATA_WIDTH-1:0] em_rd_2, 
+  output reg [DATA_WIDTH-1:0] em_r_data_2, 
   output reg [DATA_WIDTH-1:0] em_imm, 
   output reg [DATA_WIDTH-1:0] em_r_imm, 
   output reg [DATA_WIDTH-1:0] em_pc, 
@@ -67,7 +67,7 @@ module EX_MEM_reg
       em_reg_write <= 0; 
       em_csr_write <= 0; 
       em_alu_result <= 0; 
-      em_rd_2 <= 0; 
+      em_r_data_2 <= 0; 
       em_imm <= 0; 
       em_r_imm <= 0; 
       em_pc <= 0; 
@@ -86,7 +86,7 @@ module EX_MEM_reg
       em_reg_write <= 0; 
       em_csr_write <= 0; 
       em_alu_result <= 0; 
-      em_rd_2 <= 0; 
+      em_r_data_2 <= 0; 
       em_imm <= 0; 
       em_r_imm <= 0; 
       em_pc <= 0; 
@@ -105,7 +105,7 @@ module EX_MEM_reg
       em_reg_write <= reg_write; 
       em_csr_write <= csr_write; 
       em_alu_result <= alu_result; 
-      em_rd_2 <= rd_2; 
+      em_r_data_2 <= r_data_2; 
       em_imm <= imm; 
       em_r_imm <= r_imm; 
       em_pc <= pc; 

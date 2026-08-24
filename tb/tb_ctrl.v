@@ -25,7 +25,7 @@ module tb_ctrl;
                      .BLOCK_BITS(BLOCK_BITS), .WB_FIFO_DEPTH(FIFO_DEPTH))
   dut (.clk(clk), .reset(reset),
     .cpu_data_in_valid(cpu_data_in_valid), .cpu_write_read(cpu_write_read),
-    .cpu_data_in(cpu_data_in), .cpu_addr_in(cpu_addr_in),
+    .cpu_data_in(cpu_data_in), .cpu_addr_in(cpu_addr_in), .cpu_size(2'b00),
     .cpu_data_out(cpu_data_out), .cpu_ready_out(cpu_ready_out),
     .cpu_data_out_valid(cpu_data_out_valid),
     .mem_ready(mem_ready), .mem_data_in_valid(mem_data_in_valid),

@@ -2,7 +2,8 @@ module cache_controller
 #(
   parameter ADDR_BITS = 32,
   parameter DATA_WIDTH = 32,
-  parameter BLOCK_BITS = 64*8,
+  parameter BLOCK_BITS = 32*8,
+  parameter WORD_OFF_BITS = 3,  
   parameter WB_FIFO_DEPTH = 64
 )
 (
@@ -11,14 +12,13 @@ module cache_controller
   input cpu_data_in_valid,
   input cpu_write_read,
   input [DATA_WIDTH-1:0] cpu_data_in,
+  input [1:0] cpu_size, //00 byte, 01 half, 10/11 word
   input [ADDR_BITS-1:0] cpu_addr_in,
   output reg [DATA_WIDTH-1:0] cpu_data_out,
   output reg cpu_ready_out,
   output reg cpu_data_out_valid,
 
-  //memory port. a request is offered on mem_addr_in_valid and is taken by the
-  //memory on the cycle mem_addr_in_valid & mem_ready are both high. read data
-  //comes back later on mem_data_in_valid.
+  //memory port
   input mem_ready,
   input mem_data_in_valid,
   input [BLOCK_BITS-1:0] mem_data_in,
@@ -34,6 +34,7 @@ module cache_controller
   reg cpu_cache_valid;
   reg [ADDR_BITS-1:0] cpu_cache_addr_in;
   reg [DATA_WIDTH-1:0] cpu_cache_data_in;
+  reg [1:0] cpu_cache_size;
   reg mem_cache_missed_valid_in;
   reg [BLOCK_BITS-1:0] mem_cache_missed_block_in;
   wire [DATA_WIDTH-1:0] cpu_cache_data_out;
@@ -102,7 +103,7 @@ module cache_controller
   cache
   #(
     .ADDR_BITS(ADDR_BITS),
-    .WORD_OFF_BITS(4),
+    .WORD_OFF_BITS(WORD_OFF_BITS),
     .BYTE_OFF_BITS(2),
     .BLOCK_BITS(BLOCK_BITS),
     .SET_BITS(7),
@@ -117,6 +118,7 @@ module cache_controller
     .valid(cpu_cache_valid),
     .addr(cpu_cache_addr_in),
     .data_in(cpu_cache_data_in),
+    .size(cpu_cache_size),
     .missed_valid_in(mem_cache_missed_valid_in),
     .missed_block_in(mem_cache_missed_block_in),
     .data_out(cpu_cache_data_out),
@@ -150,6 +152,7 @@ module cache_controller
       cpu_cache_write_read <= 0;
       cpu_cache_valid <= 0;
       cpu_cache_data_in <= 0;
+      cpu_cache_size <= 0;
       cpu_cache_addr_in <= 0;
       cpu_data_out <= 0;
       cpu_data_out_valid <= 0;
@@ -166,6 +169,7 @@ module cache_controller
           cpu_cache_valid <= 1;
           cpu_ready_out <= 0;
           cpu_cache_data_in <= cpu_data_in;
+          cpu_cache_size <= cpu_size;
           cpu_cache_addr_in <= cpu_addr_in;
           cpu_data_out_valid <= 0;
           c_current_state <= C_PORT_REQ;
@@ -439,6 +443,7 @@ module cache
   input valid,
   input [ADDR_BITS-1:0] addr,
   input [DATA_WIDTH-1:0] data_in,
+  input [1:0] size, //00 byte, 01 half, 10/11 word
   input missed_valid_in,
   input [BLOCK_BITS-1:0] missed_block_in,
   output reg [DATA_WIDTH-1:0] data_out,
@@ -451,6 +456,8 @@ module cache
   output reg [ADDR_BITS-1:0] miss_addr
 );
   localparam SET_N  = 1 << SET_BITS;
+  localparam SIZE_B = 2'b00; 
+  localparam SIZE_H = 2'b01; 
   localparam WORD_N = 1 << WORD_OFF_BITS;
   localparam BYTE_N = 1 << BYTE_OFF_BITS;
   localparam WAY_SEL_BITS = $clog2(WAY_N);
@@ -485,6 +492,7 @@ module cache
   reg [DATA_WIDTH-1:0] data_in_r;
   reg [WORD_OFF_BITS-1:0] word_index_r;
   reg [BYTE_OFF_BITS-1:0] byte_index_r;
+  reg [1:0] size_r;
   reg [ADDR_BITS-1:0] addr_r;
 
   reg [(DATA_WIDTH)-1:0]        way_word_data_write;
@@ -653,6 +661,7 @@ module cache
       tag_index_r <= 0;
       byte_index_r <= 0;
       word_index_r <= 0;
+      size_r <= 0;
       write_read_r <= 0;
       addr_r <= 0;
       cache_write_tag_en <= 0;
@@ -695,6 +704,7 @@ module cache
           tag_index_r <= tag_index;
           word_index_r <= word_index;
           byte_index_r <= byte_index;
+          size_r <= size;
           write_read_r  <= write_read;
           data_in_r <= data_in;
           addr_r <= addr;
@@ -845,7 +855,12 @@ module cache
     way_block_data_read = (current_state == READ_MISS) ? missed_block_in :
                 cache_data_out_r[set_way_select_num*BLOCK_BITS +: BLOCK_BITS];
     way_word_data_read = way_block_data_read[(word_index_r*DATA_WIDTH) +: DATA_WIDTH];
-    way_data_out = { {(DATA_WIDTH-8){1'b0}}, way_word_data_read[byte_index_r*8 +: 8] };
+    //sub-word results are zero-extended here; the core sign-extends for LB/LH.
+    case(size_r)
+      SIZE_B:  way_data_out = { {(DATA_WIDTH-8){1'b0}},  way_word_data_read[byte_index_r*8 +: 8] };
+      SIZE_H:  way_data_out = { {(DATA_WIDTH-16){1'b0}}, way_word_data_read[byte_index_r[1]*16 +: 16] };
+      default: way_data_out = way_word_data_read;
+    endcase
   end
 
   //write strobe: same word/byte selection, read-modify-write of the addressed byte
@@ -854,7 +869,13 @@ module cache
     way_block_data_write = (current_state == WRITE_MISS) ? missed_block_in :
                 cache_data_out_r[set_way_select_num*BLOCK_BITS +: BLOCK_BITS];
     way_word_data_write = way_block_data_write[(word_index_r*DATA_WIDTH) +: DATA_WIDTH];
-    way_word_data_write[byte_index_r*8 +: 8] = data_in_r[byte_index_r*8 +: 8];
+    //store data is taken from the low bits of data_in_r, which is where SB/SH
+    //put it, not from the lane the address selects.
+    case(size_r)
+      SIZE_B:  way_word_data_write[byte_index_r*8 +: 8]      = data_in_r[7:0];
+      SIZE_H:  way_word_data_write[byte_index_r[1]*16 +: 16] = data_in_r[15:0];
+      default: way_word_data_write = data_in_r;
+    endcase
     way_block_data_write[(word_index_r*DATA_WIDTH) +: DATA_WIDTH] = way_word_data_write;
 
     way_cache_data_write = cache_data_out_r;

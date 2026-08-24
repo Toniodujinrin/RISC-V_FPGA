@@ -30,10 +30,21 @@ So this plan commits to a **primary target** and treats the rest as sequenced st
 | **S2** | Dhrystone 2.1 + DMIPS/MHz measurement | after Tue |
 
 **What the goal change displaces.** Running C needs a correct pipeline, working `LW`/`SW`, a toolchain,
-and startup code. It does **not** need traps, CSRs, the branch predictor, or the cache. So Zicsr/traps
-drop behind "C runs", and the [cache](#day-4--tuesday-cache-integration-p2) stays P2 — do **not** let
-`l1.v`'s byte-only data path onto the critical path for C. Run C against a plain RAM first
-(`inst_mem.v`/`data_mem.v`, both still empty); the cache is a swap-in afterwards.
+and startup code. It does **not** need traps, CSRs, or the branch predictor — so Zicsr/traps drop behind
+"C runs".
+
+> **Revised 23 Aug: the cache is the memory from the start.** The byte-only blocker is gone — `l1.v`
+> now services word, half and byte (see [Sub-word access](#sub-word-access-in-the-cache-resolved)), so
+> the plain-RAM intermediate step buys less than it used to and costs a second memory interface to
+> write and throw away. Two things that follow from this and are easy to miss:
+>
+> - **You still need a backing memory behind the cache.** `l1.v`'s memory port is block-wide
+>   (`BLOCK_BITS = 512`) with a `mem_ready`/`mem_data_in_valid` handshake. `inst_mem.v`/`data_mem.v`
+>   do not disappear — they become that backing store. `tb/tb_ctrl.v` already has a model to borrow.
+> - **Debug cost is the real trade.** A cache miss stall is live from the first pipeline bring-up, so a
+>   wrong result could be the pipeline *or* the stall path. Mitigate by keeping instruction fetch on a
+>   simple ROM at first and putting only the data side through the cache — two independent stall
+>   sources into one pipeline is materially harder than one, and that ordering costs you nothing.
 
 The one design decision that makes P2 cheap is in [Day 1](#the-memory-interface-decision-do-this-once-get-it-right): **give the core a `valid`/`ready` stalling memory interface from the very first single-cycle version.** Then on Tuesday the cache swaps in behind an interface the pipeline already respects, instead of being surgery on a finished design.
 
@@ -46,8 +57,8 @@ The one design decision that makes P2 cheap is in [Day 1](#the-memory-interface-
 Beyond a correct RV32I core, GCC output needs six things this repo does not have yet.
 
 1. **`LW`/`SW` must work.** The ABI spills registers on every non-leaf call — recursive fib is
-   `sw ra,12(sp)` / `lw ra,12(sp)` before it is anything else. This is why `l1.v`'s byte-only data path
-   is a blocker for C, and why the answer is to *not use the cache yet* rather than to fix it first.
+   `sw ra,12(sp)` / `lw ra,12(sp)` before it is anything else. **Resolved 23 Aug** — `l1.v` now does
+   word, half and byte ([Sub-word access](#sub-word-access-in-the-cache-resolved)).
 2. **A stack.** `sp` must point at the top of RAM before `main`, and RAM must hold the deepest call
    chain. `fib_rec(20)` is ~20 frames.
 3. **`crt0.S` + a linker script.** Nothing currently sets `sp`, sets `gp`, zeroes `.bss`, or calls
@@ -121,19 +132,21 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 | `rtl/branch_predictor.v` | 125 | ✅ | **Done 23 Aug** — gshare, pure PHT+BHR. Target path removed (BTB owns it). Lints clean. See [B3](#b3--branch_predictorv) |
 | `rtl/btb.v` | 104 | ✅ | **Done 23 Aug** — fully-associative branch target buffer, 4 entries. See [D9](#d9-btb-structure-and-depth) |
 | `rtl/register_file.v` | 45 | ✅ | **Done 23 Aug** — 32 regs, `x0` hardwired, write-first. See [B4](#b4--register_filev) |
-| `rtl/forwarding_unit.v` | 40 | ✅ | **Done 22 Aug** — lints clean. See [B5](#b5--forwarding_unitv) |
-| `rtl/instruction_decoder.v` | 100 | ✅ | **Done 22 Aug** — decode verified, suite still to write. See [B6](#b6--instruction_decoderv) |
-| `rtl/l1.v` | 894 | ✅ | 4-way cache + WB FIFO + arbiter. Standalone TB exists. **Byte-only data path — cannot do `LW`**, see [Day 4](#day-4--tuesday-cache-integration-p2) |
+| `rtl/forwarding_unit.v` | 43 | ⚠ | Matching logic correct. **`source_a`/`source_b` outputs are declared but never driven** — the datapath does that mux itself, so either drive them or drop the ports. See [B5](#b5--forwarding_unitv), [D12](#d12-what-gets-forwarded) |
+| `rtl/instruction_decoder.v` | 100 | ⚠ | Decode verified, suite still to write. **`r_imm` output added 24 Aug but never assigned** — CSR immediate is X down the whole pipe. See [B6](#b6--instruction_decoderv) |
+| `rtl/l1.v` | 916 | ✅ | 4-way cache + WB FIFO + arbiter. **Sub-word access added 23 Aug** — word/half/byte via a new `cpu_size` port. See [Sub-word access](#sub-word-access-in-the-cache-resolved) |
 | `rtl/control.v` | 88 | ✅ | **Updated 23 Aug** — `mem_to_reg` widened to 3 bits (5 writeback sources); standalone `lui` output folded in as encoding `011`. No SYSTEM arm yet |
 | `rtl/pc_controller.v` | 38 | ✅ | **Done 23 Aug** — priority encoder, lints clean. See [PC redirect priority](#pc-redirect-priority) |
 | `rtl/program_counter.v` | 22 | ✅ | **Done 23 Aug** — async-reset PC register |
 | `rtl/inst_mem.v` | 0 | — | **empty** |
 | `rtl/data_mem.v` | 0 | — | **empty** |
-| `rtl/hazard_detector.v` | 0 | — | **empty** |
+| `rtl/hazard_detector.v` | 21 | ❌ | **In progress 24 Aug** — port list incomplete, does not parse. Excluded from elaboration; nothing instantiates it yet. **The last blocker for a running pipeline** |
 | `rtl/IF_ID_reg.v` | 74 | ✅ | **Done 23 Aug** — carries the full prediction payload; flush drops it. Verified in sim |
 | `rtl/ID_EX_reg.v` | 187 | ✅ | **Done 23 Aug** — full control/decode/datapath/prediction payload. Verified in sim. See [What belongs in a pipeline register](#what-belongs-in-a-pipeline-register) |
 | `rtl/EX_MEM_reg.v` | 124 | ✅ | **Done 23 Aug** — `em_` prefix. Completes all four pipeline registers; chain verified in sim |
 | `rtl/MEM_WB_reg.v` | 97 | ✅ | **Done 23 Aug** — module renamed `MEM_WB_reg` to match the file. All 5 writeback sources cross. `csr_write` still to add for Day 3 |
+| `rtl/BE_logic.v` | 22 | ✅ | **Done 24 Aug** — load sign-extension, the surviving half of the paper's `BE_Logic`. Verified with the cache end to end |
+| `rtl/datapath.v` | 611 | ✅ | **Wired 24 Aug** — all five stages, elaborates clean, smoke test executes real instructions with forwarding. Hazard + CSR are TODO stubs inside. See [Datapath wiring](#datapath-wiring-24-aug) |
 
 **Committed through `5f7ea85` ("added btb for branching").** Note that cocotb build artifacts are tracked — `__pycache__/`, `sim_build/`, `*.vcd`, `results.xml` — so every simulation run dirties the tree. Worth a `.gitignore` + `git rm --cached` before the diffs start mattering for debugging.
 
@@ -343,14 +356,31 @@ The riskiest day. Budget the whole day; do not add CSRs today no matter how well
 
 - [x] ~~`★☆☆ P0` **Register file write-first behaviour**~~ — **done 23 Aug** ([B4](#b4--register_filev)). Write moved to `negedge clk`, so a WB write in cycle N is visible to an ID read in cycle N. Without it a distance-3 RAW reads stale, because forwarding only covers producers one and two instructions ahead.
   - **The `register_file` cocotb suite cannot catch this**, and that is now demonstrated rather than assumed: its driver applies stimulus on the falling edge, which is also the write edge, so it never exercises a same-cycle read-and-write the way a pipeline does. It still passes 100/100 either way. **`hazard.S` is what has to catch a regression here — make sure it includes a dependency at distance 3, not just 1 and 2.**
-- [ ] `★★☆ P0` **Pipeline registers first, hazards second.** **All four written and sim-verified 23 Aug.** `ID/EX → EX/MEM → MEM/WB → WB mux → forwarding_unit` elaborates with no width or pin mismatches. What is left is wiring them into a top-level datapath with no forwarding and no hazard logic, then the NOP-padded run. Verify with a test where every instruction is separated by 4 `NOP`s — all 7 Day-1 programs must pass in NOP-padded form. This isolates "did I wire the pipeline right" from "did I get hazards right", and that separation is what keeps Sunday from becoming an undebuggable mess.
+- [x] ~~`★★☆ P0` **Pipeline registers first, hazards second.**~~ — **done 24 Aug.** All four registers written, and `rtl/datapath.v` wires all five stages together. Elaborates clean under `iverilog -Wall`; a smoke test runs `addi/addi/add/add` and gets the right answers through both forwarding paths. Forwarding is already in, so the NOP-padded step was skipped. Verify with a test where every instruction is separated by 4 `NOP`s — all 7 Day-1 programs must pass in NOP-padded form. This isolates "did I wire the pipeline right" from "did I get hazards right", and that separation is what keeps Sunday from becoming an undebuggable mess.
 - [ ] `★☆☆ P0` **⚠** **Wire in `rtl/forwarding_unit.v`** — already written, lint-clean, and logically correct (EX/MEM priority over MEM/WB is right). Just connect it and drop the NOP padding from the arithmetic tests. Easy, but it cannot happen before the pipeline registers exist.
 - [ ] `★☆☆ P0` **⚠** **Wire in `rtl/branch_logic.v`** — written 23 Aug, lints clean, 5/5 directed cases pass. Easy, but it needs `EX_pc`/`EX_imm` out of `ID/EX`, so the pipeline registers must exist first. See [Branch resolution in EX](#branch-resolution-in-ex) for what it needs from the pipeline registers.
 - [ ] `★★☆ P0` **Static prediction.** Tie `branch_prediction = 0` (predict not-taken), resolve in EX, flush on `prediction_miss`. Get the pipeline *correct* before making it *fast* — the dynamic predictor is a Monday feature and can only change performance, never correctness. If it changes correctness, your flush logic is broken. With `branch_logic` already in place, switching to the real predictor on Monday is just changing what drives `branch_prediction`.
 - [ ] `★★☆ P0` **⚠** Re-run all 7 test programs **unpadded**, then add `hazard.S`: back-to-back dependent ALU ops, load-immediately-followed-by-use, branch on a just-computed value, store of a just-loaded value, and a **distance-3 dependency** for the write-first path above. Last by dependency, not difficulty.
-- [ ] `★★★ P0` `rtl/hazard_detector.v` — the empty file, and the hardest thing you will write this weekend. Two jobs:
+- [ ] `★★★ P0` `rtl/hazard_detector.v` — **the last blocker for a running pipeline.** Started 24 Aug, does not parse yet. Three jobs:
   - **Load-use stall:** `ID/EX.MemRead && (ID/EX.rd == IF/ID.rs1 || ID/EX.rd == IF/ID.rs2)` → stall IF/ID, bubble ID/EX. Forwarding cannot fix this one; the data does not exist yet.
-  - **Control flush:** on a taken or mispredicted branch resolved in EX, flush `IF/ID` and `ID/EX`.
+  - **Control flush:** on a taken or mispredicted branch resolved in EX, flush `IF/ID` and `ID/EX`. Already wired in `datapath.v` as `ex_prediction_miss | ex_jump`.
+  - **Memory stall** — see below. This one is new since the cache went in from the start.
+
+**The memory stall needs an LSU, not just a hazard-unit input.** The cache's CPU protocol is: wait for
+`cpu_ready_out`, **pulse** `cpu_data_in_valid` for one cycle, then wait for `cpu_data_out_valid` — which
+signals completion for loads *and* stores. That is a stateful handshake and the hazard unit is
+combinational, so routing `cpu_ready_out`/`cpu_data_out_valid` straight into it would re-issue the
+request every stalled cycle — duplicate loads, and duplicate **stores**. Put a small load/store unit in
+MEM that issues the request once, holds a `mem_busy` level until `cpu_data_out_valid`, and hand only
+`mem_busy` to the hazard unit.
+
+**A memory stall is not a global freeze.** Hold `IF/ID`, `ID/EX`, `EX/MEM` — but **bubble `MEM/WB`**.
+Holding MEM/WB instead makes WB re-commit the same instruction every cycle of the stall: idempotent for
+a plain register write, so it tests fine, but it over-counts `minstret` and repeats CSR writes.
+
+**Priority:** memory stall (deepest) beats load-use. And note flush and stall can be live at once on
+different registers — a mispredict flushes IF/ID and ID/EX while a memory stall freezes EX/MEM. If you
+build stall and flush as two global signals you will have to unpick that; keep them per-register.
 
 ### What belongs in a pipeline register
 
@@ -390,6 +420,31 @@ PHT with no history to recover.
   until Day 3, then essential.
 - `stall` everywhere holds rather than bubbles, which is the global-freeze discipline `l1.v` needs on
   a cache miss.
+
+### Datapath wiring (24 Aug)
+
+`rtl/datapath.v` connects all five stages. Elaborates clean; smoke test executes
+`addi x1,x0,5 / addi x2,x0,7 / add x3,x1,x2 / add x4,x1,x3` and produces 5, 7, 12, 17 — exercising
+fetch, decode, control, `alu_controller`, ALU, both forwarding paths and writeback.
+
+**Module ports.** `inst_mem.v` is still empty, so fetch is brought out as `imem_addr`/`imem_data`, and
+the cache's backing-memory port is brought out too. Both get filled in when the mem units exist.
+
+**One ordering bug worth remembering:** forwarding must be applied to the *register reads*, then the
+`alu_src` mux selects. Doing it the other way round — source mux first, forward mux second — lets an
+active forward overwrite the PC for `AUIPC`/`JAL`, or the CSR immediate. The same applies to store
+data: `EX_MEM_reg.r_data_2` takes the **forwarded** `rd_2`, or `sw` of a just-computed value stores
+stale data.
+
+**Still tied off inside:**
+
+- every stall is `1'b0`; flush on IF/ID and ID/EX is `ex_prediction_miss | ex_jump`
+- `csr_read_data`, `trap`, `t_target` are zero; `csr_ready` is 1
+- `cpu_data_in_valid` is driven straight off `em_mem_read | em_mem_write`, which re-issues the request
+  every stalled cycle — the LSU has to take this over. `cpu_ready_out`/`cpu_data_out_valid` are
+  brought out and waiting.
+- the prediction is registered one cycle behind `btb_target`, which is combinational off `if_pc`.
+  This skew needs resolving with the hazard unit.
 
 ### Branch resolution in EX
 
@@ -454,11 +509,10 @@ What's left here is integration, not the predictor itself:
 Only start this if Monday's exit criteria are met and committed on a tag.
 
 - [ ] `★☆☆ P0` `git tag rv32i46f-5sp-verified` — a known-good point to return to. Do this before touching anything.
-- [ ] `★★★ P2` **⚠ BLOCKER — sub-word access in the cache.** Position forced and it is the hardest item of the day: nothing below can proceed until this is done, because the cache cannot currently service an `LW`. As written, `rtl/l1.v` is **byte-only**:
-  - `l1.v:848` reads one byte and zero-extends it — that is exactly `LBU`, and there is no path that returns a full word
-  - `l1.v:857` writes one byte — that is exactly `SB`
-  - Needed: a size/signedness input on **both** `cache` and `cache_controller` (the outer CPU port has no such signal at all), a read path that selects byte/half/word by `byte_index_r` and sign- **or** zero-extends, and a byte-enable read-modify-write covering 1, 2 or 4 bytes
-  - **Re-read the P2 decision in light of this.** It is materially more work than "wire the cache in", and [If you fall behind](#if-you-fall-behind) already puts P2 first on the chopping block.
+- [x] ~~`★★★ P2` **⚠ BLOCKER — sub-word access in the cache**~~ — **✅ resolved 23 Aug**, see
+  [Sub-word access in the cache](#sub-word-access-in-the-cache-resolved). This was the item that made
+  P2 expensive; with it gone, the cache is now the memory from the start
+  ([Scope call](#scope-call-read-this-first)).
 - [ ] `★☆☆ P2` **⚠** Re-run the **entire** test suite after wiring. A cache is a correctness-neutral optimisation: if any test changes result, the cache or the stall path is wrong, not the test. Trivial to run, last by dependency.
 - [ ] `★★☆ P2` Build a backing-memory model with realistic latency (`mem_ready` deasserted for N cycles) — `tb/tb_ctrl.v` already has the shape of one to borrow
 - [ ] `★★☆ P2` Wire `cache_controller` from `rtl/l1.v` in as the **data** memory only. Leave instruction fetch on the simple RAM — one variable at a time.
@@ -470,6 +524,35 @@ Only start this if Monday's exit criteria are met and committed on a tag.
   like a hung UART.
 
 **Risk:** the cache's `BLOCK_BITS = 512` block against a 32-bit core means a miss moves 64 bytes. Make sure the miss path and the write-back FIFO drain logic are exercised — `tb/tb_ctrl.v` covers FIFO-full drain, which is the nastiest case, so that TB is worth trusting.
+
+---
+
+### Sub-word access in the cache (resolved)
+
+`rtl/l1.v` was byte-only: `l1.v:848` read one byte and zero-extended it (an `LBU`), `l1.v:857` wrote
+one byte (an `SB`), and there was no path that returned a full word. Fixed 23 Aug in ~26 lines.
+
+**A `size` input was unavoidable** — byte-vs-word cannot be inferred from the offset bits alone. Added
+as `cpu_size` on `cache_controller`'s CPU port (`00` byte, `01` half, `10`/`11` word), latched to
+`size_r` inside `cache` alongside `byte_index_r`/`word_index_r`. Both strobes became a 3-way `case`
+with **word as the `default`**, so an unrecognised encoding gives a full word rather than a partial
+access.
+
+**The split with the core.** The cache does *lane selection*; the core does *sign extension*. Sub-word
+reads come back zero-extended and the core sign-extends `LB`/`LH` off `funct3[2]`. This differs from
+the paper, which keeps its data memory dumb and puts shift + mask + extend all in one `BE_Logic` block
+— fine for a plain RAM, but a cache has to own the write merge itself, because the modified word lands
+in a cached block that gets written back later.
+
+**One behaviour change:** the old byte-store took its data from `data_in_r[byte_index_r*8 +: 8]` — the
+same lane the address selected. RISC-V `SB` puts the byte in `rs2[7:0]` regardless of address, so it is
+now `data_in_r[7:0]` (and `[15:0]` for `SH`). `tb/tb_ctrl.v` does **not** cover this: every store in it
+is at byte offset 0, where both expressions are identical.
+
+**Testing.** `tb/tb_ctrl.v` needed `.cpu_size(2'b00)` added or every access takes the word path; with
+it wired all its original checks pass unchanged. A separate test covers what it does not — word round
+trip, byte reads at all four offsets, half reads at both, and `SB`/`SH`/`SW` merges. **That test is not
+in `tb/` yet — move it there before trusting the sub-word path.**
 
 ---
 
@@ -731,6 +814,25 @@ The cost is on the other side: ID now holds the register-file read, immediate ge
 unit *and* `alu_controller`, while EX is comparatively light. If ID turns out to be the critical path
 at [S1](#stretch--after-tuesday), moving `alu_controller` back to EX is a contained change — carry
 `funct_7` instead of `alu_op` and move the instance.
+
+### D12. What gets forwarded
+
+**Settled 24 Aug.** The forwarding unit emits selects only; the datapath holds the muxes. The paper
+splits it the other way — its Hazard Unit does the rd/rs comparison and its Forward Unit contains the
+muxes, which is why the paper's Forward Unit takes `MEM.imm(LUI)`, `MEM.ALUresult`, `MEM.csrRD`,
+`MEM.D_RD`, `MEM.PC+4` and the same five again for WB. Those are just the five writeback sources.
+
+Either split works. What is **not** optional: you must forward the value the producing instruction will
+*write back*, not its ALU result. Forwarding `alu_result` blindly breaks `JAL` (link is PC+4), `LUI`
+(value is the immediate), any CSR read, and — worst — a load at distance 2, which would forward the
+address instead of the data.
+
+`datapath.v` resolves this once per stage as `em_src` and `wb_src`, keyed off `mem_to_reg`, and
+forwards those. That reuses the writeback mux instead of duplicating source selection inside the
+forwarding unit.
+
+**Not yet covered:** CSR read-after-write forwarding (the paper's `CSR_FWsrc`, `csr_hazard_wb`,
+`csr_hazard_mem`). That compares CSR addresses, not register numbers — Day 3 work alongside Zicsr.
 
 ### D3. `x0` handling location
 Hardwire in the register file (B4-2) rather than special-casing in the control path. One place, impossible to forget.
