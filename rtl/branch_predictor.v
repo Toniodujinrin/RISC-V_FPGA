@@ -12,15 +12,13 @@ module branch_predictor
   input [1:0] predicted_in, 
   input actually_taken, 
   input predicted_valid,
-  input[$clog2(BHR_SNAPS)-1:0] predicted_snap_index, 
-  
+  input[$clog2(BHR_SNAPS)-1:0] predicted_snap_index,
+ 
+   
   //prediction port
   input [ADDR_BITS-1:0] pc_bits,
   input history_read,
   output reg [1:0] prediction_out,
-  //the index prediction_out was read from. latch this with the prediction and
-  //return it on predicted_index at resolve, so the update trains the entry the
-  //read actually came from.
   output reg [HIST_BITS-1:0] prediction_index,
   output reg prediction_valid, 
   output reg [$clog2(BHR_SNAPS)-1:0] bhr_snap_index
@@ -51,12 +49,14 @@ module branch_predictor
       bhr <= 0; 
       bhr_snap_index <= 0; 
     end
+
     else if(prediction_valid)
     begin 
       bhr <= {bhr[HIST_BITS-2:0],prediction_out[1]};
       bhr_snaps[bhr_snap_index] <= {bhr[HIST_BITS-2:0],prediction_out[1]};
       bhr_snap_index <= bhr_snap_index + 1; //wraps and overwrites 
     end 
+
     else if(history_write && predicted_valid)
     begin 
       bhr <= {bhr_snaps[predicted_snap_index][HIST_BITS-1:1], actually_taken}; 
@@ -111,8 +111,8 @@ module branch_predictor
 
 
 
-  //weakly not-taken. starting at 2'b00 (strongly not-taken) would make every
-  //branch mispredict twice before it could ever predict taken.
+
+  //weakly not-taken on startup.    
   integer i; 
   initial 
   begin 
