@@ -13,19 +13,98 @@ Reproducing **RV32I46F_5SP** from *BASIC_RV32s: An Open-Source Microarchitectura
 
 The paper covers two halves: **(a)** an incrementally-built pipelined core, **(b)** an SoC with UART + GPIO + Dhrystone synthesised at 50 MHz on Artix-7. Half (a) is achievable by Tuesday. Half (b) — plus the L1 cache integration you want, which is **not in the paper at all** (the paper's memories are plain LUT-based distributed RAM) — is more than 4 days of work if you're also debugging a first-time pipeline.
 
+> **Goal changed 23 Aug: the target is running real GCC-compiled C, not just reproducing the paper.**
+> First programs are small — iterative and recursive Fibonacci — then anything that fits in memory.
+> This is a *reordering*, not just an addition. See [Running C](#running-c--what-it-actually-needs).
+
 So this plan commits to a **primary target** and treats the rest as sequenced stretch:
 
 | | Deliverable | When |
 |---|---|---|
-| **P0** | RV32I 5-stage pipelined core, forwarding + hazard unit + 2-bit dynamic predictor, passing self-checking sim tests | **by Mon 24** |
-| **P1** | Zicsr + trap/exception handling (`RV32I43F` → `RV32I46F`) | **Mon 24 – Tue 25** |
+| **P0** | RV32I 5-stage pipelined core, forwarding + hazard unit, passing self-checking sim tests | **by Mon 24** |
+| **P0** | **GCC-compiled C running in sim** — toolchain + `crt0.S` + linker script + simple RAM, `fib.c` as the first target | **Mon 24** |
+| **P1** | Dynamic predictor wired in (CPI only, never correctness) | **Mon 24** |
+| **P1** | Zicsr + trap/exception handling (`RV32I43F` → `RV32I46F`) | **Tue 25** |
 | **P2** | `rtl/l1.v` wired in as the core's memory, core stalls on miss | **Tue 25** |
 | **S1** | FPGA synthesis + UART SoC on your board | after Tue |
 | **S2** | Dhrystone 2.1 + DMIPS/MHz measurement | after Tue |
 
+**What the goal change displaces.** Running C needs a correct pipeline, working `LW`/`SW`, a toolchain,
+and startup code. It does **not** need traps, CSRs, the branch predictor, or the cache. So Zicsr/traps
+drop behind "C runs", and the [cache](#day-4--tuesday-cache-integration-p2) stays P2 — do **not** let
+`l1.v`'s byte-only data path onto the critical path for C. Run C against a plain RAM first
+(`inst_mem.v`/`data_mem.v`, both still empty); the cache is a swap-in afterwards.
+
 The one design decision that makes P2 cheap is in [Day 1](#the-memory-interface-decision-do-this-once-get-it-right): **give the core a `valid`/`ready` stalling memory interface from the very first single-cycle version.** Then on Tuesday the cache swaps in behind an interface the pipeline already respects, instead of being surgery on a finished design.
 
 > **Target board: Intel Cyclone, Quartus toolchain.** The existing `(* ramstyle = ... *)` attributes are already correct Intel syntax and stay as-is. This differs from the paper's Xilinx Artix-7, so expect different resource numbers and a different UART primitive in S1. Everything before S1 is vendor-neutral.
+
+---
+
+## Running C — what it actually needs
+
+Beyond a correct RV32I core, GCC output needs six things this repo does not have yet.
+
+1. **`LW`/`SW` must work.** The ABI spills registers on every non-leaf call — recursive fib is
+   `sw ra,12(sp)` / `lw ra,12(sp)` before it is anything else. This is why `l1.v`'s byte-only data path
+   is a blocker for C, and why the answer is to *not use the cache yet* rather than to fix it first.
+2. **A stack.** `sp` must point at the top of RAM before `main`, and RAM must hold the deepest call
+   chain. `fib_rec(20)` is ~20 frames.
+3. **`crt0.S` + a linker script.** Nothing currently sets `sp`, sets `gp`, zeroes `.bss`, or calls
+   `main`. Minimum: `_start` loads `sp` and `__global_pointer$`, zeroes `.bss`, `call main`, then stores
+   to `SIM_EXIT`. Linker script puts `.text` at the reset vector and `.data`/`.bss` in RAM.
+4. **libgcc.** With `-march=rv32i` GCC emits calls to `__mulsi3`, `__divsi3`, `__udivsi3`, `__modsi3`
+   for `*`, `/`, `%`. They live in libgcc, so link it (`-lgcc`). No hardware change needed — an
+   unresolved-symbol error here is the usual first surprise. Hardware M is an optimisation, not a
+   requirement.
+5. **Sub-word access.** `char`/`short` need `LB/LBU/LH/LHU/SB/SH` — see [D6](#d6-where-sub-word-access-decodes).
+6. **Somewhere for output to go** — see [Memory-mapped IO](#memory-mapped-io).
+
+### The C ladder
+
+`tests/c/`, in dependency order — each step adds exactly one new requirement:
+
+| program | first needs |
+|---|---|
+| `fib_iter.c` — loop, no calls | registers + branches only; runs before memory works at all |
+| `sum.c` — sum a global array | `.data` init, `LW`, `gp` |
+| `fib_rec.c` — recursive | stack, `sp`, `jal`/`jalr`, spill/reload |
+| `strlen.c` / struct walk | `LB`/`LBU`, `SB` |
+| `divmod.c` | libgcc soft mul/div |
+| `hello.c` | MMIO UART + `putchar` |
+
+Check results by storing to a known address and asserting in the TB, exactly like the `.S` tests. Do
+not depend on `printf` until `hello.c` — a failing `printf` and a failing core look identical.
+
+## Memory-mapped IO
+
+**The thing to get right: MMIO must bypass the cache.** Decode the address in MEM *before* routing the
+request, and send IO down a separate path. If MMIO goes through `l1.v`, UART writes sit in the
+write-back FIFO instead of appearing, and a status-register read returns a stale cached value forever —
+so a `while(!(UART_STATUS & 1));` poll hangs on the first character.
+
+```
+addr[31:28] == 4'hF  ->  IO bus      (uncached, single cycle, word access)
+otherwise            ->  RAM / cache
+```
+
+| address | register | |
+|---|---|---|
+| `0xF000_0000` | `UART_TX` | write: transmit byte in `[7:0]` |
+| `0xF000_0004` | `UART_RX` | read: received byte |
+| `0xF000_0008` | `UART_STATUS` | bit0 `tx_ready`, bit1 `rx_valid` |
+| `0xF000_0010` | `GPIO_OUT` | LEDs |
+| `0xF000_0014` | `GPIO_IN` | buttons |
+| `0xF000_00FC` | `SIM_EXIT` | write ends simulation, value = exit code |
+
+- **Build `SIM_EXIT` first** — before the UART, before anything. A store that makes the TB `$finish`
+  with a pass/fail code is what turns every C program into a self-checking test.
+- **In sim the UART is two lines:** on a write to `UART_TX`, `$write("%c", data)`. `printf` works long
+  before any UART RTL exists; the real one is an [S1](#stretch--after-tuesday) concern.
+- Tie `tx_ready` high in the sim model so polling loops fall straight through.
+- MMIO reads must not be cached or speculative; MMIO writes must not be buffered or reordered.
+- The decoder belongs in MEM, next to the load/store path — **not** inside `l1.v`. Keeping it outside
+  means the cache never sees an IO address and needs no changes.
 
 ---
 
@@ -39,22 +118,24 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 | `rtl/alu.v` | 43 | ✅ | **Done 23 Aug** — `ADD_C` added, `` `PC `` retired, lints clean. See [B1](#b1--aluv) |
 | `rtl/alu_controller.v` | 67 | ✅ | **Done 23 Aug** — `JALR` → `` `ADD_C ``. See [B2](#b2--alu_controllerv) |
 | `rtl/branch_logic.v` | 35 | ✅ | **Done 23 Aug** — EX-stage resolve, lints clean, 5/5 directed cases |
-| `rtl/branch_predictor.v` | 125 | ✅ | **Done 22 Aug** — gshare, lints to 1 benign warning. See [B3](#b3--branch_predictorv) |
+| `rtl/branch_predictor.v` | 125 | ✅ | **Done 23 Aug** — gshare, pure PHT+BHR. Target path removed (BTB owns it). Lints clean. See [B3](#b3--branch_predictorv) |
+| `rtl/btb.v` | 104 | ✅ | **Done 23 Aug** — fully-associative branch target buffer, 4 entries. See [D9](#d9-btb-structure-and-depth) |
 | `rtl/register_file.v` | 45 | ✅ | **Done 23 Aug** — 32 regs, `x0` hardwired, write-first. See [B4](#b4--register_filev) |
 | `rtl/forwarding_unit.v` | 40 | ✅ | **Done 22 Aug** — lints clean. See [B5](#b5--forwarding_unitv) |
 | `rtl/instruction_decoder.v` | 100 | ✅ | **Done 22 Aug** — decode verified, suite still to write. See [B6](#b6--instruction_decoderv) |
 | `rtl/l1.v` | 894 | ✅ | 4-way cache + WB FIFO + arbiter. Standalone TB exists. **Byte-only data path — cannot do `LW`**, see [Day 4](#day-4--tuesday-cache-integration-p2) |
-| `rtl/control.v` | 94 | ✅ | **Started 22 Aug** — opcode decode only; no SYSTEM arm yet |
+| `rtl/control.v` | 88 | ✅ | **Updated 23 Aug** — `mem_to_reg` widened to 3 bits (5 writeback sources); standalone `lui` output folded in as encoding `011`. No SYSTEM arm yet |
 | `rtl/pc_controller.v` | 38 | ✅ | **Done 23 Aug** — priority encoder, lints clean. See [PC redirect priority](#pc-redirect-priority) |
+| `rtl/program_counter.v` | 22 | ✅ | **Done 23 Aug** — async-reset PC register |
 | `rtl/inst_mem.v` | 0 | — | **empty** |
 | `rtl/data_mem.v` | 0 | — | **empty** |
 | `rtl/hazard_detector.v` | 0 | — | **empty** |
-| `rtl/IF_ID_reg.v` | 0 | — | **empty** |
-| `rtl/ID_EX_reg.v` | 14 | ❌ | stub, port list incomplete |
-| `rtl/EX_MEM_reg.v` | 0 | — | **empty** |
-| `rtl/MEM_WB_reg.v` | 0 | — | **empty** |
+| `rtl/IF_ID_reg.v` | 74 | ✅ | **Done 23 Aug** — carries the full prediction payload; flush drops it. Verified in sim |
+| `rtl/ID_EX_reg.v` | 187 | ✅ | **Done 23 Aug** — full control/decode/datapath/prediction payload. Verified in sim. See [What belongs in a pipeline register](#what-belongs-in-a-pipeline-register) |
+| `rtl/EX_MEM_reg.v` | 124 | ✅ | **Done 23 Aug** — `em_` prefix. Completes all four pipeline registers; chain verified in sim |
+| `rtl/MEM_WB_reg.v` | 97 | ✅ | **Done 23 Aug** — module renamed `MEM_WB_reg` to match the file. All 5 writeback sources cross. `csr_write` still to add for Day 3 |
 
-**Committed through `6c91be6` ("added control unit").** Note that cocotb build artifacts are tracked — `__pycache__/`, `sim_build/`, `*.vcd`, `results.xml` — so every simulation run dirties the tree. Worth a `.gitignore` + `git rm --cached` before the diffs start mattering for debugging.
+**Committed through `5f7ea85` ("added btb for branching").** Note that cocotb build artifacts are tracked — `__pycache__/`, `sim_build/`, `*.vcd`, `results.xml` — so every simulation run dirties the tree. Worth a `.gitignore` + `git rm --cached` before the diffs start mattering for debugging.
 
 ---
 
@@ -120,7 +201,12 @@ Start each day at the top and work down: the cheap items build momentum and, mor
   ```bash
   sudo apt install gcc-riscv64-unknown-elf   # then use -march=rv32i -mabi=ilp32
   ```
-  **Highest-variance item on this list** — it is either five minutes or a two-hour rabbit hole. Timebox it. If the Debian package will not target rv32i cleanly, fall back to `pip install riscv-assembler` for small hand-written tests and defer the real toolchain to S2, when Dhrystone actually needs it. Do not let this block the harness above.
+  **Now a hard blocker, not a timebox** — as of the 23 Aug goal change the deliverable *is* compiled C,
+  so there is no hand-assembly fallback that still reaches the target. It is either five minutes or a
+  two-hour rabbit hole; if the Debian package will not target rv32i cleanly, try
+  `xpack-dev-tools/riscv-none-elf-gcc` or a prebuilt SiFive toolchain rather than deferring. You need
+  `gcc`, `ld`, `objcopy` and **libgcc** — see [Running C](#running-c--what-it-actually-needs) for why
+  libgcc matters even without the M extension.
 
 **Done 22 Aug:**
 
@@ -243,6 +329,10 @@ Each is ~10 instructions and ends by writing a known value to a known address:
 6. `jump.S` — `JAL`/`JALR`, verify link register and `JALR` LSB clearing
 7. `lui_auipc.S` — `LUI` and `AUIPC` (**`AUIPC` will fail until you fix [B6](#b6--instruction_decoderv)**)
 
+Once these pass, the `.S` suite stays the regression net — the [C ladder](#the-c-ladder) is stacked
+on top of it, not instead of it. A C failure with a green `.S` suite means toolchain/crt0/linker; a C
+failure with a red one means the core.
+
 **Exit criteria (end of Saturday):** all 7 programs pass on the single-cycle core. This is the checkpoint that decides whether Tuesday is realistic — if you're not here by Saturday night, cut P2 (cache) immediately and protect P0.
 
 ---
@@ -253,7 +343,7 @@ The riskiest day. Budget the whole day; do not add CSRs today no matter how well
 
 - [x] ~~`★☆☆ P0` **Register file write-first behaviour**~~ — **done 23 Aug** ([B4](#b4--register_filev)). Write moved to `negedge clk`, so a WB write in cycle N is visible to an ID read in cycle N. Without it a distance-3 RAW reads stale, because forwarding only covers producers one and two instructions ahead.
   - **The `register_file` cocotb suite cannot catch this**, and that is now demonstrated rather than assumed: its driver applies stimulus on the falling edge, which is also the write edge, so it never exercises a same-cycle read-and-write the way a pipeline does. It still passes 100/100 either way. **`hazard.S` is what has to catch a regression here — make sure it includes a dependency at distance 3, not just 1 and 2.**
-- [ ] `★★☆ P0` **Pipeline registers first, hazards second.** Insert `IF/ID`, `ID/EX`, `EX/MEM`, `MEM/WB` with no forwarding and no hazard logic. Verify with a test where every instruction is separated by 4 `NOP`s — all 7 Day-1 programs must pass in NOP-padded form. This isolates "did I wire the pipeline right" from "did I get hazards right", and that separation is what keeps Sunday from becoming an undebuggable mess.
+- [ ] `★★☆ P0` **Pipeline registers first, hazards second.** **All four written and sim-verified 23 Aug.** `ID/EX → EX/MEM → MEM/WB → WB mux → forwarding_unit` elaborates with no width or pin mismatches. What is left is wiring them into a top-level datapath with no forwarding and no hazard logic, then the NOP-padded run. Verify with a test where every instruction is separated by 4 `NOP`s — all 7 Day-1 programs must pass in NOP-padded form. This isolates "did I wire the pipeline right" from "did I get hazards right", and that separation is what keeps Sunday from becoming an undebuggable mess.
 - [ ] `★☆☆ P0` **⚠** **Wire in `rtl/forwarding_unit.v`** — already written, lint-clean, and logically correct (EX/MEM priority over MEM/WB is right). Just connect it and drop the NOP padding from the arithmetic tests. Easy, but it cannot happen before the pipeline registers exist.
 - [ ] `★☆☆ P0` **⚠** **Wire in `rtl/branch_logic.v`** — written 23 Aug, lints clean, 5/5 directed cases pass. Easy, but it needs `EX_pc`/`EX_imm` out of `ID/EX`, so the pipeline registers must exist first. See [Branch resolution in EX](#branch-resolution-in-ex) for what it needs from the pipeline registers.
 - [ ] `★★☆ P0` **Static prediction.** Tie `branch_prediction = 0` (predict not-taken), resolve in EX, flush on `prediction_miss`. Get the pipeline *correct* before making it *fast* — the dynamic predictor is a Monday feature and can only change performance, never correctness. If it changes correctness, your flush logic is broken. With `branch_logic` already in place, switching to the real predictor on Monday is just changing what drives `branch_prediction`.
@@ -261,6 +351,45 @@ The riskiest day. Budget the whole day; do not add CSRs today no matter how well
 - [ ] `★★★ P0` `rtl/hazard_detector.v` — the empty file, and the hardest thing you will write this weekend. Two jobs:
   - **Load-use stall:** `ID/EX.MemRead && (ID/EX.rd == IF/ID.rs1 || ID/EX.rd == IF/ID.rs2)` → stall IF/ID, bubble ID/EX. Forwarding cannot fix this one; the data does not exist yet.
   - **Control flush:** on a taken or mispredicted branch resolved in EX, flush `IF/ID` and `ID/EX`.
+
+### What belongs in a pipeline register
+
+Settled 23 Aug while writing `ID_EX_reg` and `MEM_WB_reg`. Use this for `EX/MEM`, the last one.
+
+**The rule:** carry every signal **produced at or before this stage** that is **read at or after the
+next stage** — by *any* consumer, not just that stage's own datapath. The last clause is the one that
+catches people out; it is why the paper's registers look over-stuffed.
+
+Four categories, all of which have to be checked:
+
+1. **Every input to a downstream mux.** `control.v:16` makes `mem_to_reg` a 5-way select
+   (`000` ALU, `001` memory, `010` PC+4, `011` lui, `100` CSR), so all five values must reach WB.
+   `PC+4`, the LUI immediate and `csrRD` are produced in ID and nothing recomputes them later — they
+   ride three registers to get there. This is most of the apparent bloat, and it is unavoidable once
+   the writeback source is chosen late.
+2. **Control whose effect lands downstream** — `reg_write`, `mem_to_reg`, `csr_write`. Decoded once in
+   ID, acted on in WB. Note the converse: `mem_read`/`mem_write` must *not* cross MEM/WB, because the
+   access already happened. Signals stop travelling the moment their last reader is behind them.
+3. **The destination** — `rd`. Easy to forget; without it the write has no target.
+4. **Whatever the side units read out of this stage.** `forwarding_unit.v:7-12` reads
+   `ID_EX_RS1`/`RS2` and `EX_MEM_RD`/`MEM_WB_RD` + their `RegWrite`s. The hazard unit reads the same
+   pair. Traps need `WB.PC` for `mepc`, and `opcode`/`instr` for `mtval` and `minstret`. The debugger
+   reads `WB.instr`. None of these are datapath, and all of them are in the paper's Fig. 2 registers.
+
+**Gshare adds a fifth for this design:** the prediction payload
+(`prediction_out`, `prediction_index`, `bhr_snap_index`, `prediction_valid`) must ride from IF to the
+resolve point, or the update trains the wrong PHT entry and restores the wrong BHR snapshot
+([B3](#b3--branch_predictorv)). The paper carries only `B.EST` because its predictor is a plain 2-bit
+PHT with no history to recover.
+
+**Flush and stall are not the same question at every stage:**
+
+- `IF/ID`, `ID/EX` — flush is the mispredict/jump squash. Load-bearing from Day 2.
+- `MEM/WB` — flush is **not** for mispredicts; an instruction here is already past the EX resolve
+  point. It exists for the **trap squash**, so a faulting instruction cannot write back. Dead logic
+  until Day 3, then essential.
+- `stall` everywhere holds rather than bubbles, which is the global-freeze discipline `l1.v` needs on
+  a cache miss.
 
 ### Branch resolution in EX
 
@@ -291,9 +420,12 @@ Three things to hold onto when wiring it:
 
 What's left here is integration, not the predictor itself:
 
-- [ ] `★☆☆ P0` **⚠** **Gate `history_read` on a fetch-word pre-decode** — decided 23 Aug from Fig. 2 ([B3](#b3--branch_predictorv)): `history_read = (inst[6:2] == `B_TYPE)`. Not optional; `branch_logic.v` cannot recover from a prediction made on a non-branch. Everything below depends on it.
-- [ ] `★☆☆ P1` Extract the B-type immediate in IF for `B_Target` — the paper's predictor computes the target itself from `IF.PC`/`IF.imm`; yours doesn't, so either `pc_controller` does `PC + imm` or the predictor gains the port. Pure bit-shuffling of the fetch word, no decode needed.
-- [ ] `★☆☆ P1` Carry `{prediction_out, prediction_index, bhr_snap_index}` through `IF/ID` and `ID/EX` — 9 + `$clog2(BHR_SNAPS)` bits per in-flight branch. Widening two registers.
+- [x] `★☆☆ P0` ~~Gate `history_read` on a fetch-word pre-decode~~ — **superseded 23 Aug by the BTB** ([D9](#d9-btb-structure-and-depth)). `history_read = hit_miss`: the BTB only holds PCs that resolved as branches in EX, so a hit *is* the "this is a branch" gate. Strictly better than pre-decoding the fetch word — it needs no instruction bits in IF, which matters once fetch goes through `l1.v` and the word isn't back yet.
+  - **⚠ Polarity:** `hit_miss` is high on a **hit**. `history_read = hit_miss`, never `~hit_miss`.
+- [x] `★☆☆ P1` ~~Extract the B-type immediate in IF for `B_Target`~~ — **superseded 23 Aug.** `btb.v` stores the resolved target from EX, so nothing recomputes `PC + imm` in IF. `if_imm_bits`/`branch_target` were removed from `branch_predictor.v` on 23 Aug.
+- [x] `★☆☆ P1` ~~Carry `{prediction_out, prediction_index, bhr_snap_index, prediction_valid}` through `IF/ID` and `ID/EX`~~ — **done 23 Aug**, both registers. Dropped on flush in each. Note `branch_logic.v:11` wants a **1-bit** prediction: feed it `ex_branch_prediction[1]`, not the 2-bit bus.
+- [ ] `★☆☆ P1` **Change the BTB target select to one-hot AND/OR** before growing the buffer, and raise `BUFFER_DEPTH` 4 → 8 ([D9](#d9-btb-structure-and-depth))
+- [ ] `★★☆ P1` Wire `btb.v` into IF: `if_pc` from the PC, `target` → `pc_controller.branch_target`, `hit_miss` → `branch_predictor.history_read`, and the write port from EX branch resolution (`ex_pc`, `ex_target`, `ex_op_code`, `write_en`)
 - [ ] `★★☆ P1` Wire the prediction port into IF and the update port into branch resolution in EX
 - [ ] `★★☆ P1` On mispredict in EX: flush, and assert `history_write` with `predicted_index`/`predicted_in`/`predicted_snap_index` taken from the pipeline registers
 - [ ] `★★☆ P1` Verify it *predicts*: a loop of 100 iterations should mispredict ~2 times, not ~100. Count mispredicts in the TB and assert on the number.
@@ -332,6 +464,10 @@ Only start this if Monday's exit criteria are met and committed on a tag.
 - [ ] `★★☆ P2` Wire `cache_controller` from `rtl/l1.v` in as the **data** memory only. Leave instruction fetch on the simple RAM — one variable at a time.
 - [ ] `★★☆ P2` Pipeline must stall on `!cpu_ready_out` and wait for `cpu_data_out_valid`. Your Day-1 interface decision makes this a hazard-unit change, not a datapath change.
 - [ ] `★★★ P2` Only then consider the instruction side. Two independent stall sources into the same pipeline is materially harder than one.
+
+- [ ] `★☆☆ P2` **⚠** Confirm the MMIO decoder sits *outside* `cache_controller`, so IO addresses never
+  reach the cache. See [Memory-mapped IO](#memory-mapped-io) — cached MMIO is the failure that looks
+  like a hung UART.
 
 **Risk:** the cache's `BLOCK_BITS = 512` block against a 32-bit core means a miss moves 64 bytes. Make sure the miss path and the write-back FIFO drain logic are exercised — `tb/tb_ctrl.v` covers FIFO-full drain, which is the nastiest case, so that TB is worth trusting.
 
@@ -436,12 +572,12 @@ Nothing outstanding in this file.
 
 **Still open:**
 
-- **`history_read` gating — ✅ settled 23 Aug from Fig. 2: gate on a pre-decode of the fetch word.** The paper's Branch Predictor takes **`IF.opcode`** as an input, so it only predicts on actual branches and the BHR is never polluted by non-branches. Implement as `history_read = (inst[6:2] == `B_TYPE)` in IF.
+- **`history_read` gating — ✅ settled 23 Aug: `history_read = hit_miss` from the BTB.** Supersedes the Fig. 2 pre-decode approach. The paper feeds the predictor `IF.opcode` because its instruction memory is combinational-read LUT RAM, so the fetch word is available in IF. Yours goes through `l1.v`, where it isn't — so the BTB answers "is this a branch, and where does it go" from the PC alone. See [D9](#d9-btb-structure-and-depth). The `instr` port added for pre-decode was removed 23 Aug.
   - **This is now a correctness requirement, not a preference.** [`branch_logic.v`](#branch-resolution-in-ex) reports `prediction_miss = 0` whenever `branch` is low. If an ungated predictor redirects the PC for a non-branch, that instruction reaches EX with `branch = 0`, nothing flushes, and execution continues from the wrong address with no recovery path.
-- **The predictor does not compute `B_Target`; the paper's does.** Fig. 2 shows the Branch Predictor taking `IF.PC` and `IF.imm` and emitting `B_Target` alongside `B.EST`. Yours emits only `prediction_out`/`prediction_index`, so either `pc_controller.v` computes `PC + imm` itself or you add it here. Either way you need the **B-type immediate extracted in IF**, before the decoder runs — pure bit-shuffling of the fetch word (`{{19{inst[31]}}, inst[31], inst[7], inst[30:25], inst[11:8], 1'b0}`), no decode required, but it is logic that does not exist yet.
+- **~~The predictor does not compute `B_Target`~~ — ✅ resolved 23 Aug: the BTB owns targets.** `if_imm_bits`, `branch_target`, and the adder were removed from `branch_predictor.v`, which is now a pure PHT + BHR. `pc_controller.v`'s `branch_target` input is fed by `btb.v`'s `target` output. No IF-stage immediate extraction is needed.
 - **Naming:** `predicted_valid` (input) vs `prediction_valid` (output) differ by one character and appear in the same expressions. Rename the input to `update_valid`.
 - **Residual one-cycle skew** (won't fix): `current_index` uses `bhr` from the cycle before `prediction_valid` rises, while the snapshot uses `bhr` from the cycle after. Now that the index is carried separately this no longer affects PHT training — it only slightly degrades recovery fidelity.
-- **Pipeline cost:** each in-flight branch must now carry 7 bits of `prediction_index` plus 2 bits of `prediction_out` plus `$clog2(BHR_SNAPS)` bits of snapshot index. Size `IF/ID` and `ID/EX` accordingly.
+- **Pipeline cost:** each in-flight branch carries 7 bits of `prediction_index`, 2 of `prediction_out`, `$clog2(BHR_SNAPS)` of snapshot index, and 1 valid bit. **`IF/ID` and `ID/EX` both done 23 Aug**, flush drops the payload in each so a squashed branch cannot train the PHT. The full chain predictor → IF/ID → ID/EX → update port elaborates with no width mismatches.
 
 ### B4 — `register_file.v`
 
@@ -531,14 +667,70 @@ calculation, so `` `ADD_C `` took its slot and `alu_op` stayed 4 bits. See [B1](
 
 ### D7. Jump prediction
 
-**✅ Settled 23 Aug — jumps are not predicted; accept the EX-resolution penalty.** The predictor gates
-`history_read` on `` `B_TYPE `` ([B3](#b3--branch_predictorv)), so `JAL`/`JALR` always resolve in EX and
-cost the full ~2-cycle bubble. This matches the paper and keeps the redirect path single-sourced.
+**✅ Settled 23 Aug — jumps are not predicted; accept the EX-resolution penalty.** `btb.v` only allocates
+on `ex_op_code[6:2] == `` `B_TYPE ``, so `JAL`/`JALR` never get a BTB entry, never hit, and therefore never
+gate `history_read` on. They always resolve in EX and cost the full ~2-cycle bubble. Same outcome as the
+paper, reached through the BTB rather than a fetch-word pre-decode ([D9](#d9-btb-structure-and-depth)).
 
 Revisit only once the full pipeline is working. A `JAL` target is computable in ID (it needs no
 register), so redirecting there costs 1 bubble instead of 2 — but it adds a second redirect source and
 another priority tier to [PC redirect priority](#pc-redirect-priority), which is not a thing to be
 debugging alongside the hazard unit.
+
+### D9. BTB structure and depth
+
+**✅ Settled 23 Aug — 8 entries, and change the target select to one-hot AND/OR.**
+
+The BTB replaces the paper's IF-stage pre-decode ([B3](#b3--branch_predictorv)). The paper can read
+`IF.opcode`/`IF.imm` in fetch because its instruction memory is combinational-read distributed RAM.
+Once fetch goes through `l1.v` the instruction word isn't back in time, so the target has to come from
+a PC-indexed structure instead. `hit_miss` then does double duty: it *is* the "this PC is a branch"
+gate that `history_read` needs.
+
+**Measured cost** — yosys `synth_xilinx`, lookup path only, `ltp -noff`:
+
+| entries | LUT levels (index-mux, as written) | LUT levels (one-hot AND/OR) | FFs |
+|---|---|---|---|
+| 4 | 10 | 8 | 254 |
+| 8 | 13 | 10 | 507 |
+| 16 | 17 | 11 | 1012 |
+| 32 | 24 | 12 | 2021 |
+| 64 | 37 | 13 | 4038 |
+
+> ⚠ These are **Xilinx**-mapped via yosys; the board is Intel Cyclone/Quartus ([Scope call](#scope-call-read-this-first)).
+> Absolute LUT/FF numbers will not transfer. The *scaling shape* will — it's a property of the netlist
+> structure, not the target cell library.
+
+**Two conclusions:**
+
+1. **Depth is not the fmax problem; the priority encoder is.** As written, `buff_index_1` is built by a
+   for-loop where each iteration overwrites the last, which synthesises to a serial mux chain — hence
+   the near-linear growth (10 → 37). Replacing index-then-mux with a one-hot AND/OR reduction over the
+   matching entries is associative, so synthesis rebalances it into a tree and depth goes logarithmic
+   (8 → 13). **Do this before growing the buffer.**
+2. **8 entries.** At the 25 MHz starting target ([S1](#stretch--after-tuesday)) there is ~40 ns of budget
+   and the lookup is nowhere near binding at any of these sizes, so pick for hit rate, not timing.
+   4 is likely too few for Dhrystone's inner loops; 8 covers them with round-robin replacement. With
+   the one-hot fix, 8 → 16 costs about one extra LUT level, so growing later is cheap if the hit rate
+   disappoints. Instrument mispredicts before deciding to grow.
+
+**Storage note.** The array is `63 × N` flip-flops and cannot be RAM: a fully-associative lookup compares
+every entry every cycle, so every bit must be visible to the comparators simultaneously. Resetting only
+the valid bits does *not* change this — measured, no effect. If the buffer ever needs to be large
+(64+), the structure has to change to direct-mapped or set-associative, where one PC-indexed entry is
+read per cycle and the payload can live in RAM. Measured direct-mapped depth is flat at ~12–14 levels
+regardless of size. Not worth it at N=8.
+
+### D10. Where `alu_controller` lives
+
+**✅ Settled 23 Aug — in ID, not EX.** `ID_EX_reg` carries a 4-bit `alu_op` rather than the 7-bit
+`funct_7` the paper's ID/EX carries, because the paper decodes ALU control in EX and this design does
+it in ID. Cheaper across the register, and one less thing in the EX path.
+
+The cost is on the other side: ID now holds the register-file read, immediate generation, the control
+unit *and* `alu_controller`, while EX is comparatively light. If ID turns out to be the critical path
+at [S1](#stretch--after-tuesday), moving `alu_controller` back to EX is a contained change — carry
+`funct_7` instead of `alu_op` and move the instance.
 
 ### D3. `x0` handling location
 Hardwire in the register file (B4-2) rather than special-casing in the control path. One place, impossible to forget.
@@ -553,7 +745,11 @@ Hardwire in the register file (B4-2) rather than special-casing in the control p
 - [ ] Branch predictor demonstrably reduces mispredicts on a loop benchmark
 - [ ] `ECALL` → handler → `MRET` round-trips correctly
 - [ ] Cache integration leaves every test result unchanged
-- [ ] `README.md` documents the deviations from the paper (D1, and gshare-vs-2-bit)
+- [ ] **`fib_iter.c` and `fib_rec.c`, compiled by GCC, produce correct results in sim**
+- [ ] Every program in the [C ladder](#the-c-ladder) passes
+- [ ] `hello.c` prints over the MMIO UART model, and `SIM_EXIT` reports pass/fail to the TB
+- [ ] MMIO verified uncached: a UART status poll terminates with the cache wired in
+- [ ] `README.md` documents the deviations from the paper (D1, gshare-vs-2-bit, and the MMIO map)
 - [ ] Clean commit history with a tag at `rv32i46f-5sp-verified`
 
 ---

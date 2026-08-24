@@ -13,10 +13,9 @@ module control
   output reg [1:0] alu_src_2, //00 RD2 | 01 imm | 10 csrRD (Day 3)
   output reg mem_read, 
   output reg mem_write, 
-  output reg [1:0] mem_to_reg, //00 ALU | 01 memory | 10 PC+4 (link)
+  output reg [2:0] mem_to_reg, //000 ALU | 001 memory | 010 PC+4| 011 lui| 100 CSR
   output reg reg_write, 
-  output reg csr_write, 
-  output reg lui
+  output reg csr_write 
 ); 
 
 
@@ -29,8 +28,7 @@ module control
     branch = 0; 
     jump = 0; 
     reg_write = 0; // register file write enable 
-    mem_to_reg = 2'd0; //writeback source, see encoding above 
-    lui = 0; 
+    mem_to_reg = 3'd0; //writeback source, see encoding above 
     pc_src = 0; 
     pc_stall = 0; 
     csr_write = 0; 
@@ -63,7 +61,7 @@ module control
      `I_TYPE_3: //Load instruction
      begin 
       alu_src_2 = 2'd1; 
-      mem_to_reg = 2'd1; //from memory
+      mem_to_reg = 3'd1; //from memory
       mem_read = 1; 
       reg_write = 1; 
      end  
@@ -74,14 +72,14 @@ module control
         jump = 1; 
         alu_src_1 = (op_code[6:2] == `J_TYPE) ? 2'd1 : 2'd0; //JAL: PC, JALR: rs1 
         alu_src_2 = 2'd1; 
-        mem_to_reg = 2'd2; 
+        mem_to_reg = 3'd2; 
       end 
 
      `U_TYPE_1, `U_TYPE_2: //LUI, AUPIC  
      begin 
         reg_write = 1; 
         alu_src_2 = 2'd1; 
-        lui = (op_code[6:2] == `U_TYPE_1) ? 1 : 0;
+        mem_to_reg = (op_code[6:2] == `U_TYPE_1) ? 3'd4 : 3'd0;
         alu_src_1 = (op_code[6:2] == `U_TYPE_2) ? 2'd1 : 2'd0; 
      end 
     endcase
