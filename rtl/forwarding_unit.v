@@ -11,7 +11,7 @@ module forwarding_unit
   input [ADDR_WIDTH-1:0] MEM_WB_RD, 
   input EX_MEM_RegWrite, //A write operation is being carried out on the destination register  
   input MEM_WB_RegWrite, 
-  output reg [1:0] forward_a,forward_b, 
+  output reg [1:0] forward_a,forward_b
 );
 
 

@@ -1,2 +1,9 @@
 .claude 
 .venv 
+db 
+output_files 
+incremental_db 
+syn
+*.qpf 
+*.qsf
+rtl/*.bak

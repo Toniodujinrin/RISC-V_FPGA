@@ -508,23 +508,29 @@ module cache
   //flat so they reset in one assignment: index {set, way}
   reg [(SET_N*WAY_N)-1:0] valid_bits_pw; //per_way valid bits
   reg [(SET_N*WAY_N)-1:0] dirty_bits_pw; //per_way dirty bits
-  reg [(SET_N*WAY_N*WAY_SEL_BITS)-1:0] access_rec; //per_way access rec
+  reg [(SET_N*(WAY_N-1))-1:0] access_rec; //per_set tree plru nodes
 
   reg [WAY_N-1:0] comparison;
   wire hit = |comparison;
   reg [WAY_SEL_BITS-1:0] selected_way;
   reg [WAY_SEL_BITS-1:0] max_record;
-  wire [WAY_N-1:0] max_record_oh = 1 << max_record;
+  //the victim is latched in DELAY_STATE so that the access_rec read and the plru
+  //decode get a cycle of their own instead of feeding the block mux that drives
+  //evicted_block. access_rec for this set cannot change between DELAY_STATE and
+  //the access completing -- update_access_rec only runs in the states that end
+  //the access -- so the registered copy is what the live decode would give.
+  reg [WAY_SEL_BITS-1:0] max_record_r;
+  wire [WAY_N-1:0] max_record_r_oh = 1 << max_record_r;
   //access records of the set currently being looked up (parallels set_tag_in_cache)
-  wire [(WAY_N*WAY_SEL_BITS)-1:0] set_access_rec =
-       access_rec[set_index_r*WAY_N*WAY_SEL_BITS +: WAY_N*WAY_SEL_BITS];
+  wire [WAY_N-2:0] set_access_rec =
+       access_rec[set_index_r*(WAY_N-1) +: (WAY_N-1)];
 
   reg [WAY_N-1:0] set_way_select;      //also serves as write_en, and evicted way select
   reg [WAY_SEL_BITS-1:0] set_way_select_num;
   wire set_hit_miss = hit;
   wire set_output_valid = (current_state == DOING_READ) || (current_state == DOING_WRITE);
-  wire set_evict_valid = !hit && valid_bits_pw[{set_index_r, max_record}]
-                              && dirty_bits_pw[{set_index_r, max_record}];
+  wire set_evict_valid = !hit && valid_bits_pw[{set_index_r, max_record_r}]
+                              && dirty_bits_pw[{set_index_r, max_record_r}];
 
   integer k, n, t;
 
@@ -584,39 +590,19 @@ module cache
   //max record 4 ways selector (least recently used victim)
   always@(*)
   begin
-    if (set_access_rec[0*WAY_SEL_BITS +: WAY_SEL_BITS] > set_access_rec[1*WAY_SEL_BITS +: WAY_SEL_BITS])
-    begin
-      if(set_access_rec[0*WAY_SEL_BITS +: WAY_SEL_BITS] > set_access_rec[2*WAY_SEL_BITS +: WAY_SEL_BITS])
-      begin
-        if(set_access_rec[0*WAY_SEL_BITS +: WAY_SEL_BITS] > set_access_rec[3*WAY_SEL_BITS +: WAY_SEL_BITS])
-          max_record = 0;
-        else
-          max_record = 3;
-      end
-      else
-      begin
-        if(set_access_rec[2*WAY_SEL_BITS +: WAY_SEL_BITS] > set_access_rec[3*WAY_SEL_BITS +: WAY_SEL_BITS])
-          max_record = 2;
-        else
-          max_record = 3;
-      end
+    if(set_access_rec[0])
+    begin 
+      if(set_access_rec[1])
+        max_record = 2'd3; 
+      else 
+        max_record = 2'd2;
     end
-    else
-    begin
-      if(set_access_rec[1*WAY_SEL_BITS +: WAY_SEL_BITS] > set_access_rec[2*WAY_SEL_BITS +: WAY_SEL_BITS])
-      begin
-        if(set_access_rec[1*WAY_SEL_BITS +: WAY_SEL_BITS] > set_access_rec[3*WAY_SEL_BITS +: WAY_SEL_BITS])
-          max_record = 1;
-        else
-          max_record = 3;
-      end
-      else
-      begin
-        if(set_access_rec[2*WAY_SEL_BITS +: WAY_SEL_BITS] > set_access_rec[3*WAY_SEL_BITS +: WAY_SEL_BITS])
-          max_record = 2;
-        else
-          max_record = 3;
-      end
+    else 
+    begin 
+      if(set_access_rec[2])
+        max_record = 2'd1; 
+      else 
+        max_record = 2'd0; 
     end
   end
 
@@ -630,24 +616,25 @@ module cache
     end
     else
     begin
-      set_way_select     = max_record_oh;
-      set_way_select_num = max_record;
+      set_way_select     = max_record_r_oh;
+      set_way_select_num = max_record_r;
     end
   end
 
   task update_access_rec;
     input [SET_BITS-1:0] set_i;
     input [WAY_SEL_BITS-1:0] way_i;
-    integer a;
     begin
-      for(a = 0; a < WAY_N; a = a+1)
-      begin
-        if(a[WAY_SEL_BITS-1:0] == way_i)
-          access_rec[(set_i*WAY_N + a)*WAY_SEL_BITS +: WAY_SEL_BITS] <= 0;
-        else if(access_rec[(set_i*WAY_N + a)*WAY_SEL_BITS +: WAY_SEL_BITS] != {WAY_SEL_BITS{1'b1}}) //saturate
-          access_rec[(set_i*WAY_N + a)*WAY_SEL_BITS +: WAY_SEL_BITS] <=
-            access_rec[(set_i*WAY_N + a)*WAY_SEL_BITS +: WAY_SEL_BITS] + 1'b1;
-      end
+        if(way_i < 2)
+        begin 
+          access_rec[set_i*(WAY_N-1) + 0] <= 1'b1;           //lru side is now {2,3}
+          access_rec[set_i*(WAY_N-1) + 2] <= (way_i == 0);   //lru within {0,1}
+        end 
+        else
+        begin 
+          access_rec[set_i*(WAY_N-1) + 0] <= 1'b0;           //lru side is now {0,1}
+          access_rec[set_i*(WAY_N-1) + 1] <= (way_i == 2);   //lru within {2,3}
+        end
     end
   endtask
 
@@ -672,6 +659,7 @@ module cache
       cache_tag_in <= 0;
       cache_data_out_r <= 0;
       set_tag_in_cache <= 0;
+      max_record_r <= 0;
       current_state <= IDLE;
       data_in_r <= 0;
       output_valid <= 0;
@@ -721,6 +709,7 @@ module cache
       begin
         set_tag_in_cache <= cache_tag_out;
         cache_data_out_r <= cache_data_out;
+        max_record_r <= max_record;
         if(write_read_r)
           current_state <= DOING_WRITE;
         else

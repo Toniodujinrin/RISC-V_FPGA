@@ -548,7 +548,7 @@ module data_path
     .EX_MEM_RegWrite(em_reg_write), 
     .MEM_WB_RegWrite(wb_reg_write), 
     .forward_a(forward_a), 
-    .forward_b(forward_b), 
+    .forward_b(forward_b)
   ); 
 
   //////////////////////////////////////////////////////////////
