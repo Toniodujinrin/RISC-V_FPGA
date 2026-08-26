@@ -164,9 +164,13 @@ hazard unit, and connecting the two.
   one bubble. That makes it a CPI optimisation, not a correctness fix.
 
 <a name="a4"></a>
-- [ ] `★☆☆ P0` **⚠ Drive `instruction_decoder.v`'s `r_imm`.** Added 24 Aug, never assigned — the CSR
-  immediate (`zimm = instr[19:15]`) is `X` all the way down the pipe. Harmless until [D1](#d1),
-  fatal the moment `CSRRWI` executes.
+- [x] ~~`★☆☆ P0` **⚠ Drive `instruction_decoder.v`'s `r_imm`.**~~ — **done 25 Aug**, zero-extended
+  immediate on every arm. One thing to settle before [D1](#d1) wires the CSR file to it: `r_imm` is
+  **not** `zimm`. `zimm` is `instr[19:15]`, the rs1 field, and the datapath already sources it through
+  `alu_src_1 = 2'b10` (`datapath.v:381`). What the SYSTEM arm carries is `instr[31:20]` — the **CSR
+  address** — which is the field the CSR file actually needs. The `S`/`B`/`J`/`U` arms have no consumer
+  at all (`wb_r_imm` is unused); either cut them and rename the port `csr_addr`, or record who reads
+  them.
 
 <a name="a8"></a>
 - [x] ~~`★★☆ P0` **⚠ Wire `lsu.v` and `hazard_detector` into `datapath.v`.**~~ — **done 25 Aug.** `LSU`

@@ -1,10 +1,4 @@
 module lsu //load store unit
-//owns the whole memory-stage handshake. two rules it exists to enforce:
-//  - a request is issued exactly once per instruction, however long the
-//    pipeline sits on it. re-issuing a store is silent memory corruption.
-//  - an io address never reaches the cache. a cached uart write sits in the
-//    write back fifo instead of appearing, and a cached status read returns
-//    the same stale word forever, so a polling loop never terminates.
 #(
   parameter
   DATA_WIDTH = 32, 

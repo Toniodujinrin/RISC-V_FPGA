@@ -143,7 +143,7 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 | `rtl/btb.v` | 104 | ✅ | **Done 23 Aug** — fully-associative branch target buffer, 4 entries. See [D9](#d9-btb-structure-and-depth) |
 | `rtl/register_file.v` | 45 | ✅ | **Done 23 Aug** — 32 regs, `x0` hardwired, write-first. See [B4](#b4--register_filev) |
 | `rtl/forwarding_unit.v` | 43 | ✅ | **Done.** `forward_a`/`forward_b` only — the undriven `source_a`/`source_b` ports were dropped, the datapath owns the mux. Instantiated as `FORWARDING_UNIT` and exercised by the smoke test. See [B5](#b5--forwarding_unitv), [D12](#d12-what-gets-forwarded) |
-| `rtl/instruction_decoder.v` | 100 | ⚠ | Decode verified, suite still to write. **`r_imm` output added 24 Aug but never assigned** — CSR immediate is X down the whole pipe. See [B6](#b6--instruction_decoderv) |
+| `rtl/instruction_decoder.v` | 107 | ✅ | **`r_imm` driven 25 Aug** — zero-extended immediate on every arm. Decode verified, suite still to write. See [B6](#b6--instruction_decoderv) |
 | `rtl/l1.v` | 916 | ✅ | 4-way cache + WB FIFO + arbiter. **Sub-word access added 23 Aug** — word/half/byte via a new `cpu_size` port. See [Sub-word access](#sub-word-access-in-the-cache-resolved) |
 | `rtl/control.v` | 88 | ✅ | **Updated 23 Aug** — `mem_to_reg` widened to 3 bits (5 writeback sources); standalone `lui` output folded in as encoding `011`. No SYSTEM arm yet |
 | `rtl/pc_controller.v` | 38 | ✅ | **Done 23 Aug** — priority encoder, lints clean. See [PC redirect priority](#pc-redirect-priority) |
@@ -733,7 +733,13 @@ Note the division of labour with [B4](#b4--register_filev) — this unit's `RD !
 |---|---|---|
 | 1 | **`AUIPC` was missing** — `U_TYPE = 5'b01101` covered `LUI` only | ✅ **Fixed 22 Aug.** Split into `` `U_TYPE_1 `` (LUI) and `` `U_TYPE_2 `` (AUIPC, `5'b00101`), each with its own arm. Both use the same U-format immediate `{inst[31:12], 12'b0}`, so the two arms are identical and could merge |
 | 2 | **The I-type arm never set `funct_7`**, so `SRAI` was indistinguishable from `SRLI` | ✅ **Fixed 22 Aug.** Shift immediates now take `funct_7 = inst_in[31:25]` and a 5-bit shamt. The guard is `inst_in[6:2] == `I_TYPE_4`, which matters: that case arm also covers LOAD and SYSTEM, whose funct_3 of 001/101 (`LH`, `LHU`, `CSRRW`, `CSRRWI`) would otherwise have their immediates truncated to 5 bits |
-| 3 | `` `I_TYPE_1 `` (SYSTEM) needs the `csr`/`zimm` fields | ❌ Open — add on Day 3 with CSRs |
+| 3 | `` `I_TYPE_1 `` (SYSTEM) needs the `csr`/`zimm` fields | ⚠ **Half done 25 Aug.** `r_imm` is now driven on every arm as the zero-extended immediate, so the SYSTEM arm carries `inst[31:20]` — which is the **CSR address**. `zimm` does *not* come from here: it is `inst[19:15]`, the rs1 field, and the datapath already sources it via `alu_src_1 = 2'b10` (`datapath.v:381`). Nothing reads `r_imm` yet — `wb_r_imm` is unused |
+
+**Decide what `r_imm` actually is before Day 3 wires the CSR file to it.** Every arm is 32 bits wide and
+correct, but only the SYSTEM one has a plausible consumer. A zero-extended `S`/`B`/`J` offset is not a
+meaningful value for anything — zero-extending a signed offset only destroys the sign — so either cut
+those arms and rename the port `csr_addr`, or keep them and write down who is supposed to read them.
+Left as-is, it is four dead assignments that look load-bearing.
 
 ---
 

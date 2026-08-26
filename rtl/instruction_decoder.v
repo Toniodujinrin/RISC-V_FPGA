@@ -27,6 +27,7 @@ module instruction_decoder
     rs1 = 0;  
     rs2 = 0; 
     rd = 0; 
+    r_imm = 0; 
 
     case(inst_in[6:2])
       `R_TYPE: 
@@ -54,7 +55,8 @@ module instruction_decoder
         else
         begin 
           imm = {{20{inst_in[31]}}, inst_in[31:20]};
-        end 
+        end
+        r_imm = {{20{1'b0}},inst_in[31:20]}; 
       end 
 
       `S_TYPE:
@@ -64,6 +66,7 @@ module instruction_decoder
         rs1 = inst_in[19:15];
         rs2 = inst_in[24:20];
         imm = {{20{inst_in[31]}}, inst_in[31:25], inst_in[11:7]};
+        r_imm = {{20{1'b0}}, inst_in[31:25], inst_in[11:7]}; 
       end 
 
       `B_TYPE: 
@@ -73,6 +76,8 @@ module instruction_decoder
          rs1 = inst_in[19:15];
          rs2 = inst_in[24:20];
          imm = {{20{inst_in[31]}}, inst_in[7], inst_in[30:25], inst_in[11:8], 1'b0};
+         r_imm =  {{20{1'b0}}, inst_in[7], inst_in[30:25], inst_in[11:8], 1'b0};
+
       end 
 
       `J_TYPE: 
@@ -80,6 +85,7 @@ module instruction_decoder
          op_code = inst_in[6:0]; 
          rd = inst_in[11:7]; 
          imm = {{12{inst_in[31]}}, inst_in[19:12], inst_in[20], inst_in[30:21], 1'b0}; 
+         r_imm ={{12{1'b0}}, inst_in[19:12], inst_in[20], inst_in[30:21], 1'b0}; 
       end 
 
       `U_TYPE_1: 
@@ -87,6 +93,7 @@ module instruction_decoder
          op_code = inst_in[6:0]; 
          rd = inst_in[11:7]; 
          imm = {inst_in[31:12], 12'b0}; 
+         r_imm = {inst_in[31:12], 12'b0};
       end 
 
       `U_TYPE_2: 
@@ -94,6 +101,7 @@ module instruction_decoder
          op_code = inst_in[6:0]; 
          rd = inst_in[11:7]; 
          imm = {inst_in[31:12], 12'b0}; 
+         r_imm = {inst_in[31:12], 12'b0};
       end
     endcase
   end 

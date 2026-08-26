@@ -77,7 +77,7 @@ module control
      begin 
         reg_write = 1; 
         alu_src_2 = 2'd1; 
-        mem_to_reg = (op_code[6:2] == `U_TYPE_1) ? 3'd4 : 3'd0;
+        mem_to_reg = (op_code[6:2] == `U_TYPE_1) ? 3'd3 : 3'd0;
         alu_src_1 = (op_code[6:2] == `U_TYPE_2) ? 2'd1 : 2'd0; 
      end 
     endcase
