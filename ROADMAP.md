@@ -117,6 +117,16 @@ otherwise            ->  RAM / cache
 - The decoder belongs in MEM, next to the load/store path — **not** inside `l1.v`. Keeping it outside
   means the cache never sees an IO address and needs no changes.
 
+> **Done 25 Aug in `rtl/lsu.v`.** `is_io = em_alu_result[31:28] == IO_PAGE` (parameterised, defaults
+> `4'hF`), evaluated on the raw address in the issue cycle, so an IO access is never presented to the
+> cache at all. IO shares the LSU's single wait state — `io_access_r` records which port the
+> outstanding access used and the response side is a mux — so IO inherits the same issue-once,
+> stall-until-response guarantee. `io_req` is a strict one-cycle pulse, which is what stops a UART
+> write firing repeatedly while the pipeline is stalled, and IO loads return through the same
+> `BE_logic` path so a `char`-typed device register sign-extends correctly. **Slave contract:** sample
+> `io_req` for one cycle, return `io_ack` with `io_data_out` alongside it. Nothing answers on the
+> other end yet.
+
 ---
 
 ## Where the code actually stands
@@ -132,7 +142,7 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 | `rtl/branch_predictor.v` | 125 | ✅ | **Done 23 Aug** — gshare, pure PHT+BHR. Target path removed (BTB owns it). Lints clean. See [B3](#b3--branch_predictorv) |
 | `rtl/btb.v` | 104 | ✅ | **Done 23 Aug** — fully-associative branch target buffer, 4 entries. See [D9](#d9-btb-structure-and-depth) |
 | `rtl/register_file.v` | 45 | ✅ | **Done 23 Aug** — 32 regs, `x0` hardwired, write-first. See [B4](#b4--register_filev) |
-| `rtl/forwarding_unit.v` | 43 | ⚠ | Matching logic correct. **`source_a`/`source_b` outputs are declared but never driven** — the datapath does that mux itself, so either drive them or drop the ports. See [B5](#b5--forwarding_unitv), [D12](#d12-what-gets-forwarded) |
+| `rtl/forwarding_unit.v` | 43 | ✅ | **Done.** `forward_a`/`forward_b` only — the undriven `source_a`/`source_b` ports were dropped, the datapath owns the mux. Instantiated as `FORWARDING_UNIT` and exercised by the smoke test. See [B5](#b5--forwarding_unitv), [D12](#d12-what-gets-forwarded) |
 | `rtl/instruction_decoder.v` | 100 | ⚠ | Decode verified, suite still to write. **`r_imm` output added 24 Aug but never assigned** — CSR immediate is X down the whole pipe. See [B6](#b6--instruction_decoderv) |
 | `rtl/l1.v` | 916 | ✅ | 4-way cache + WB FIFO + arbiter. **Sub-word access added 23 Aug** — word/half/byte via a new `cpu_size` port. See [Sub-word access](#sub-word-access-in-the-cache-resolved) |
 | `rtl/control.v` | 88 | ✅ | **Updated 23 Aug** — `mem_to_reg` widened to 3 bits (5 writeback sources); standalone `lui` output folded in as encoding `011`. No SYSTEM arm yet |
@@ -140,13 +150,14 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 | `rtl/program_counter.v` | 22 | ✅ | **Done 23 Aug** — async-reset PC register |
 | `rtl/inst_mem.v` | 0 | — | **empty** |
 | `rtl/data_mem.v` | 0 | — | **empty** |
-| `rtl/hazard_detector.v` | 21 | ❌ | **In progress 24 Aug** — port list incomplete, does not parse. Excluded from elaboration; nothing instantiates it yet. **The last blocker for a running pipeline** |
+| `rtl/hazard_detector.v` | 85 | ✅ | **Done 25 Aug** — pure combinational. `req_stall` outranks every redirect; exports `mem_advance` to the LSU. Wired into `datapath.v` |
+| `rtl/lsu.v` | 139 | ✅ | **Done 25 Aug** — owns the cache handshake: issue-once, valid held until accepted, combinational `req_stall`, `DONE` state, latched load data, MMIO bypass. Wired into `datapath.v`. See [The memory-stall handshake](#the-memory-stall-handshake) |
 | `rtl/IF_ID_reg.v` | 74 | ✅ | **Done 23 Aug** — carries the full prediction payload; flush drops it. Verified in sim |
 | `rtl/ID_EX_reg.v` | 187 | ✅ | **Done 23 Aug** — full control/decode/datapath/prediction payload. Verified in sim. See [What belongs in a pipeline register](#what-belongs-in-a-pipeline-register) |
 | `rtl/EX_MEM_reg.v` | 124 | ✅ | **Done 23 Aug** — `em_` prefix. Completes all four pipeline registers; chain verified in sim |
 | `rtl/MEM_WB_reg.v` | 97 | ✅ | **Done 23 Aug** — module renamed `MEM_WB_reg` to match the file. All 5 writeback sources cross. `csr_write` still to add for Day 3 |
 | `rtl/BE_logic.v` | 22 | ✅ | **Done 24 Aug** — load sign-extension, the surviving half of the paper's `BE_Logic`. Verified with the cache end to end |
-| `rtl/datapath.v` | 611 | ✅ | **Wired 24 Aug** — all five stages, elaborates clean, smoke test executes real instructions with forwarding. Hazard + CSR are TODO stubs inside. See [Datapath wiring](#datapath-wiring-24-aug) |
+| `rtl/datapath.v` | 700 | ✅ | **Wired 24 Aug, LSU + hazard unit slotted in 25 Aug.** All five stages plus `LSU`/`HAZARD`; the stall/flush stubs are gone and the `io_*` bus is brought out to the boundary. Whole core elaborates under `iverilog -g2012`. CSR is still a TODO stub. See [Datapath wiring](#datapath-wiring-24-aug) |
 
 **Committed through `5f7ea85` ("added btb for branching").** Note that cocotb build artifacts are tracked — `__pycache__/`, `sim_build/`, `*.vcd`, `results.xml` — so every simulation run dirties the tree. Worth a `.gitignore` + `git rm --cached` before the diffs start mattering for debugging.
 
@@ -357,22 +368,41 @@ The riskiest day. Budget the whole day; do not add CSRs today no matter how well
 - [x] ~~`★☆☆ P0` **Register file write-first behaviour**~~ — **done 23 Aug** ([B4](#b4--register_filev)). Write moved to `negedge clk`, so a WB write in cycle N is visible to an ID read in cycle N. Without it a distance-3 RAW reads stale, because forwarding only covers producers one and two instructions ahead.
   - **The `register_file` cocotb suite cannot catch this**, and that is now demonstrated rather than assumed: its driver applies stimulus on the falling edge, which is also the write edge, so it never exercises a same-cycle read-and-write the way a pipeline does. It still passes 100/100 either way. **`hazard.S` is what has to catch a regression here — make sure it includes a dependency at distance 3, not just 1 and 2.**
 - [x] ~~`★★☆ P0` **Pipeline registers first, hazards second.**~~ — **done 24 Aug.** All four registers written, and `rtl/datapath.v` wires all five stages together. Elaborates clean under `iverilog -Wall`; a smoke test runs `addi/addi/add/add` and gets the right answers through both forwarding paths. Forwarding is already in, so the NOP-padded step was skipped. Verify with a test where every instruction is separated by 4 `NOP`s — all 7 Day-1 programs must pass in NOP-padded form. This isolates "did I wire the pipeline right" from "did I get hazards right", and that separation is what keeps Sunday from becoming an undebuggable mess.
-- [ ] `★☆☆ P0` **⚠** **Wire in `rtl/forwarding_unit.v`** — already written, lint-clean, and logically correct (EX/MEM priority over MEM/WB is right). Just connect it and drop the NOP padding from the arithmetic tests. Easy, but it cannot happen before the pipeline registers exist.
+- [x] ~~`★☆☆ P0` **⚠** **Wire in `rtl/forwarding_unit.v`**~~ — **done 24 Aug.** Instantiated in `datapath.v`, both paths exercised by the `addi/addi/add/add` smoke test. EX/MEM is tested before MEM/WB, which is the right priority for the double-hazard case. The forward sources are `em_src` and `wb_src` — the *writeback-source muxes*, not the raw ALU results — so a load's data forwards correctly without a separate path.
 - [ ] `★☆☆ P0` **⚠** **Wire in `rtl/branch_logic.v`** — written 23 Aug, lints clean, 5/5 directed cases pass. Easy, but it needs `EX_pc`/`EX_imm` out of `ID/EX`, so the pipeline registers must exist first. See [Branch resolution in EX](#branch-resolution-in-ex) for what it needs from the pipeline registers.
 - [ ] `★★☆ P0` **Static prediction.** Tie `branch_prediction = 0` (predict not-taken), resolve in EX, flush on `prediction_miss`. Get the pipeline *correct* before making it *fast* — the dynamic predictor is a Monday feature and can only change performance, never correctness. If it changes correctness, your flush logic is broken. With `branch_logic` already in place, switching to the real predictor on Monday is just changing what drives `branch_prediction`.
 - [ ] `★★☆ P0` **⚠** Re-run all 7 test programs **unpadded**, then add `hazard.S`: back-to-back dependent ALU ops, load-immediately-followed-by-use, branch on a just-computed value, store of a just-loaded value, and a **distance-3 dependency** for the write-first path above. Last by dependency, not difficulty.
-- [ ] `★★★ P0` `rtl/hazard_detector.v` — **the last blocker for a running pipeline.** Started 24 Aug, does not parse yet. Three jobs:
-  - **Load-use stall:** `ID/EX.MemRead && (ID/EX.rd == IF/ID.rs1 || ID/EX.rd == IF/ID.rs2)` → stall IF/ID, bubble ID/EX. Forwarding cannot fix this one; the data does not exist yet.
-  - **Control flush:** on a taken or mispredicted branch resolved in EX, flush `IF/ID` and `ID/EX`. Already wired in `datapath.v` as `ex_prediction_miss | ex_jump`.
-  - **Memory stall** — see below. This one is new since the cache went in from the start.
+- [x] ~~`★★★ P0` `rtl/hazard_detector.v`~~ — **done 25 Aug.** Module `hazard_unit`, pure combinational, lints clean. Four jobs, all in:
+  - **Load-use stall:** `ID/EX.MemRead && ID/EX.rd != 0 && (ID/EX.rd == IF/ID.rs1 || ID/EX.rd == IF/ID.rs2)` → stall PC + IF/ID, bubble ID/EX. Forwarding cannot fix this one; the data does not exist yet. **The `rd != 0` term also removes the need for `rs1_used`/`rs2_used` decoder outputs** — `instruction_decoder.v` leaves `rs1`/`rs2` at 0 for `JAL`/`LUI`/`AUIPC` and `rs2` at 0 for every I-type, so those can only match a producer whose `rd` is `x0`, which the term excludes. Non-local dependency, commented in both files.
+  - **Control flush:** on a taken or mispredicted branch resolved in EX, flush `IF/ID` and `ID/EX`. `prediction_miss || ex_jump` — one arm, since with no predictor a taken branch and a jump need identical flushes.
+  - **`mem_advance`** — the MEM/WB clock enable, exported back to the LSU so it can tell a new access from the same access still parked in MEM. Defined as `!req_stall`: a load-use stall lets MEM drain and must never appear in that term.
+  - **Memory stall** — `req_stall` from the LSU, see below.
 
-**The memory stall needs an LSU, not just a hazard-unit input.** The cache's CPU protocol is: wait for
-`cpu_ready_out`, **pulse** `cpu_data_in_valid` for one cycle, then wait for `cpu_data_out_valid` — which
-signals completion for loads *and* stores. That is a stateful handshake and the hazard unit is
-combinational, so routing `cpu_ready_out`/`cpu_data_out_valid` straight into it would re-issue the
-request every stalled cycle — duplicate loads, and duplicate **stores**. Put a small load/store unit in
-MEM that issues the request once, holds a `mem_busy` level until `cpu_data_out_valid`, and hand only
-`mem_busy` to the hazard unit.
+  **Priority: `req_stall` outranks every redirect.** With the flush arms first, a mispredict during a memory stall emits flushes and *no* stalls — EX/MEM advances and the in-flight load leaves MEM before its data returns. Letting the memory stall win is also self-healing: it freezes ID/EX, so `prediction_miss`/`ex_jump` are combinational off frozen contents and stay asserted until the stall lifts. The pending redirect cannot be lost, so nothing needs latching.
+
+### The memory-stall handshake
+
+**The memory stall needs an LSU, not just a hazard-unit input** — **built 25 Aug, `rtl/lsu.v`.** The
+cache's CPU protocol is stateful and the hazard unit is combinational, so routing
+`cpu_ready_out`/`cpu_data_out_valid` straight into it re-issues the request every stalled cycle:
+duplicate loads, and duplicate **stores**. Four things the LSU had to get right, none of them obvious
+from the cache's port list:
+
+- **Issue once.** The FSM pulses the request and holds `req_stall` until the response.
+- **Hold `valid` until accepted — do not pulse it.** The controller's real accept condition is
+  `l1.v:166`, `cpu_data_in_valid & cpu_cache_ready`, and `cpu_cache_ready` is invisible from outside
+  the module. After any miss the cache re-enters IDLE with `ready` still low (`l1.v:705` raises it a
+  cycle later, and the refill's write-enables hold it low longer) while the controller has already
+  re-asserted `cpu_ready_out`. A one-cycle pulse into that window is **silently dropped and the
+  pipeline hangs forever**. `cpu_ready_out` falling is the only observable acknowledgement, so that is
+  what the LSU uses.
+- **`req_stall` must be combinational.** A registered stall reports the previous cycle, by which point
+  the instruction it was protecting has already left MEM.
+- **A `DONE` state** for a response that arrives while something else is holding MEM — otherwise the
+  access re-issues. Entered only when `mem_advance` is low on the response cycle.
+
+Still open on the module: misaligned-access detection, which belongs in the issue path ahead of the
+MMIO split.
 
 **A memory stall is not a global freeze.** Hold `IF/ID`, `ID/EX`, `EX/MEM` — but **bubble `MEM/WB`**.
 Holding MEM/WB instead makes WB re-commit the same instruction every cycle of the stall: idempotent for
@@ -401,7 +431,7 @@ Four categories, all of which have to be checked:
    ID, acted on in WB. Note the converse: `mem_read`/`mem_write` must *not* cross MEM/WB, because the
    access already happened. Signals stop travelling the moment their last reader is behind them.
 3. **The destination** — `rd`. Easy to forget; without it the write has no target.
-4. **Whatever the side units read out of this stage.** `forwarding_unit.v:7-12` reads
+4. **Whatever the side units read out of this stage.** `forwarding_unit.v:8-13` reads
    `ID_EX_RS1`/`RS2` and `EX_MEM_RD`/`MEM_WB_RD` + their `RegWrite`s. The hazard unit reads the same
    pair. Traps need `WB.PC` for `mepc`, and `opcode`/`instr` for `mtval` and `minstret`. The debugger
    reads `WB.instr`. None of these are datapath, and all of them are in the paper's Fig. 2 registers.
@@ -684,9 +714,16 @@ Two changes made along the way that aren't in the original defect list:
 
 ### B5 — `forwarding_unit.v`
 
-**✅ Resolved 22 Aug.** `ADDR_WIDTH = 5`, `parameter` keyword added, lints clean at `-Wall`. The logic was always correct: EX/MEM is tested before MEM/WB, which is the right priority for the double-hazard case, and both paths suppress forwarding from `x0`.
+**✅ Resolved 22 Aug, wired 24 Aug.** `ADDR_WIDTH = 5`, `parameter` keyword added, lints clean at `-Wall`. The undriven `source_a`/`source_b` outputs have been dropped — the datapath does that mux itself, and a module with undriven outputs is what makes a `-Wall` run stop being worth reading. The logic was always correct: EX/MEM is tested before MEM/WB, which is the right priority for the double-hazard case, and both paths suppress forwarding from `x0`.
 
-One gap for Day 2: a `SW` whose store-data comes from an immediately preceding `LW` needs a MEM→MEM forward this unit doesn't provide. Add `mem_forward` once loads and stores are both working.
+**The `LW` → `SW` case needs no MEM→MEM forward.** An earlier note here asked for one. It isn't required, for two reasons that only became true once the rest of the pipeline landed:
+
+- The load-use stall in `hazard_detector.v` already fires on it — `ex_mem_read && ex_rd == id_rs2` catches a store whose *data* comes from the load, not just one whose address does. The `SW` bubbles one cycle and the case is correct without any new path.
+- After that bubble the load sits in MEM, and `forward_b = 2'b10` selects `em_src` — the writeback-source mux, which is `be_data_out` for a load, not the raw ALU result. So the loaded value forwards through the ordinary EX/MEM path.
+
+A MEM→MEM forward would only remove that one bubble. It is a CPI optimisation, not a correctness fix, and belongs with the other measurement work rather than on the critical path.
+
+**Store data is forwarded, not read raw.** `EX_MEM_reg.r_data_2` is fed `rd_2_fwd` (`datapath.v:458`), so `sw` of a just-computed value stores the new value. Reading `ex_rd_2` there instead is a silent wrong-data bug that only shows up in compiled code, where spill/reload pairs are everywhere.
 
 Note the division of labour with [B4](#b4--register_filev) — this unit's `RD != 0` checks stop a stale *forward* of `x0`, but they never stopped a write to `x0` landing in the file. That required the register file's own hardwiring. Two separate guards; both are needed.
 

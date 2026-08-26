@@ -27,23 +27,28 @@ module data_path
   output [DATA_WIDTH-1:0] mem_addr_in, 
   output mem_addr_in_valid, 
   output [BLOCK_BITS-1:0] mem_data_out, 
-  output mem_data_out_valid
+  output mem_data_out_valid, 
+
+  //io bus behind the lsu's mmio bypass. no slave exists yet, so it is brought
+  //out to the boundary the same way instruction fetch is
+  input [DATA_WIDTH-1:0] io_data_out, 
+  input io_ack, 
+  output io_req, 
+  output io_write_read, 
+  output [DATA_WIDTH-1:0] io_data_in, 
+  output [1:0] io_size, 
+  output [DATA_WIDTH-1:0] io_addr_in
 ); 
 
   //////////////////////////////////////////////////////////////
-  // TODO hazard_detector.v: drives every stall/flush below.
-  //   - load-use stall: ex_mem_read && (ex_rd == id_rs1 || ex_rd == id_rs2)
-  //   - memory stall: needs an LSU owning the cache handshake, exposing a
-  //     mem_busy level. cpu_ready_out/cpu_data_out_valid are brought out below.
-  //   - a memory stall holds IF/ID, ID/EX, EX/MEM and BUBBLES MEM/WB.
+  // stall and flush lines. all driven by HAZARD, instantiated in MEM below
+  // where every one of its inputs has been declared.
   // TODO CSR: csr_read_data, trap, t_target, trap_done, csr_ready are tied off.
   //////////////////////////////////////////////////////////////
-  wire if_stall  = 1'b0; 
-  wire id_stall  = 1'b0; 
-  wire ex_stall  = 1'b0; 
-  wire mem_stall = 1'b0; 
-  wire ex_flush  = 1'b0; 
-  wire mem_flush = 1'b0; 
+  wire pc_stall; 
+  wire if_id_stall, id_ex_stall, ex_mem_stall, mem_wb_stall; 
+  wire if_id_flush, id_ex_flush, ex_mem_flush, mem_wb_flush; 
+  wire req_stall, mem_advance; 
 
   //////////////////////////////////////////////////////////////
   // FETCH
@@ -66,10 +71,8 @@ module data_path
   wire [HIST_BITS-1:0] ex_prediction_index; 
   wire [$clog2(BHR_SNAPS)-1:0] ex_bhr_snap_index; 
   wire ex_prediction_valid; 
-  wire id_pc_stall; 
+  wire id_sys_busy; 
 
-  //a resolved branch redirects IF and ID
-  wire redirect = ex_prediction_miss | ex_jump; 
 
   //TODO the prediction is registered one cycle behind btb_target, which is
   //combinational off if_pc. resolve this skew with the hazard unit.
@@ -92,7 +95,7 @@ module data_path
   PC_CONTROLLER
   (
     .if_pc(if_pc), 
-    .pc_stall(id_pc_stall), 
+    .pc_stall(pc_stall), 
     .ex_jump(ex_jump), 
     .jump_target(ex_alu_result), 
     .bp_miss(ex_prediction_miss), 
@@ -189,8 +192,8 @@ module data_path
     .prediction_index(prediction_index), 
     .bhr_snap_index(bhr_snap_index), 
     .prediction_valid(prediction_valid), 
-    .flush(redirect), 
-    .stall(if_stall), 
+    .flush(if_id_flush), 
+    .stall(if_id_stall), 
     .id_pc(id_pc), 
     .id_pc_4(id_pc_4), 
     .id_instr(id_instr), 
@@ -225,7 +228,7 @@ module data_path
     .funct3(id_funct_3), 
     .trap_done(1'b0), 
     .csr_ready(1'b1), 
-    .pc_stall(id_pc_stall), 
+    .pc_stall(id_sys_busy), //multi cycle SYSTEM instruction. goes to HAZARD, not the PC
     .jump(id_jump), 
     .branch(id_branch), 
     .alu_src_1(id_alu_src_1), 
@@ -325,8 +328,8 @@ module data_path
     .prediction_index(id_prediction_index), 
     .bhr_snap_index(id_bhr_snap_index), 
     .prediction_valid(id_prediction_valid), 
-    .flush(redirect), 
-    .stall(id_stall), 
+    .flush(id_ex_flush), 
+    .stall(id_ex_stall), 
     .ex_jump(ex_jump), 
     .ex_branch(ex_branch), 
     .ex_alu_src_1(ex_alu_src_1), 
@@ -429,8 +432,11 @@ module data_path
   wire [OP_CODE_WIDTH-1:0] em_op_code; 
   wire [REG_ADDR_WIDTH-1:0] em_rd; 
 
-  wire [DATA_WIDTH-1:0] cache_data_out, be_data_out; 
+  wire [DATA_WIDTH-1:0] cache_data_out, be_data_out, lsu_data_out; 
   wire cpu_ready_out, cpu_data_out_valid; 
+  wire cpu_data_in_valid, cpu_write_read; 
+  wire [DATA_WIDTH-1:0] cpu_data_in, cpu_addr_in; 
+  wire [1:0] cpu_size; 
 
   EX_MEM_reg
   #(
@@ -459,8 +465,8 @@ module data_path
     .funct_3(ex_funct_3), 
     .op_code(ex_op_code), 
     .rd(ex_rd), 
-    .flush(ex_flush), 
-    .stall(ex_stall), 
+    .flush(ex_mem_flush), 
+    .stall(ex_mem_stall), 
     .em_mem_read(em_mem_read), 
     .em_mem_write(em_mem_write), 
     .em_mem_to_reg(em_mem_to_reg), 
@@ -479,9 +485,70 @@ module data_path
     .em_rd(em_rd)
   ); 
 
-  //TODO an LSU must own this handshake: pulse the request once and hold
-  //mem_busy until cpu_data_out_valid. driving it straight off em_mem_* re-issues
-  //the request every cycle the pipeline is stalled.
+  //the lsu owns the whole memory-stage handshake: it issues each access once,
+  //holds req_stall until the response, and routes mmio away from the cache
+  lsu
+  #(
+    .DATA_WIDTH(DATA_WIDTH), 
+    .FUNCT_3_WIDTH(FUNCT_3_WIDTH)
+  )
+  LSU
+  (
+    .clk(clk), 
+    .reset(reset), 
+
+    .em_mem_read(em_mem_read), 
+    .em_mem_write(em_mem_write), 
+    .em_funct_3(em_funct_3), 
+    .em_r_data_2(em_r_data_2), 
+    .em_alu_result(em_alu_result), 
+    .be_cache_in(lsu_data_out), 
+
+    .cpu_data_out_valid(cpu_data_out_valid), 
+    .cpu_data_out(cache_data_out), 
+    .cpu_ready_out(cpu_ready_out), 
+    .cpu_data_in_valid(cpu_data_in_valid), 
+    .cpu_write_read(cpu_write_read), 
+    .cpu_data_in(cpu_data_in), 
+    .cpu_size(cpu_size), 
+    .cpu_addr_in(cpu_addr_in), 
+
+    .io_data_out(io_data_out), 
+    .io_ack(io_ack), 
+    .io_req(io_req), 
+    .io_write_read(io_write_read), 
+    .io_data_in(io_data_in), 
+    .io_size(io_size), 
+    .io_addr_in(io_addr_in), 
+
+    .req_stall(req_stall), 
+    .mem_advance(mem_advance)
+  ); 
+
+  hazard_detector
+  #(.REG_ADDR_WIDTH(REG_ADDR_WIDTH))
+  HAZARD
+  (
+    .prediction_miss(ex_prediction_miss), 
+    .ex_jump(ex_jump), 
+    .ex_rd(ex_rd), 
+    .ex_mem_read(ex_mem_read), 
+    .id_rs1(id_rs1), 
+    .id_rs2(id_rs2), 
+    .req_stall(req_stall), 
+    .mem_advance(mem_advance), 
+    .sys_busy(id_sys_busy), 
+    .pc_stall(pc_stall), 
+    .if_id_stall(if_id_stall), 
+    .id_ex_stall(id_ex_stall), 
+    .ex_mem_stall(ex_mem_stall), 
+    .mem_wb_stall(mem_wb_stall), 
+    .if_id_flush(if_id_flush), 
+    .id_ex_flush(id_ex_flush), 
+    .ex_mem_flush(ex_mem_flush), 
+    .mem_wb_flush(mem_wb_flush)
+  ); 
+
   cache_controller
   #(
     .ADDR_BITS(DATA_WIDTH), 
@@ -493,11 +560,11 @@ module data_path
   (
     .clk(clk), 
     .reset(reset), 
-    .cpu_data_in_valid(em_mem_read | em_mem_write), 
-    .cpu_write_read(em_mem_write), 
-    .cpu_data_in(em_r_data_2), 
-    .cpu_size(em_funct_3[1:0]), 
-    .cpu_addr_in(em_alu_result), 
+    .cpu_data_in_valid(cpu_data_in_valid), 
+    .cpu_write_read(cpu_write_read), 
+    .cpu_data_in(cpu_data_in), 
+    .cpu_size(cpu_size), 
+    .cpu_addr_in(cpu_addr_in), 
     .cpu_data_out(cache_data_out), 
     .cpu_ready_out(cpu_ready_out), 
     .cpu_data_out_valid(cpu_data_out_valid), 
@@ -519,7 +586,7 @@ module data_path
   BE_LOGIC
   (
     .funct_3(em_funct_3), 
-    .cache_in(cache_data_out), 
+    .cache_in(lsu_data_out), 
     .r_out(be_data_out)
   ); 
 
@@ -581,8 +648,8 @@ module data_path
     .r_imm(em_r_imm), 
     .op_code(em_op_code), 
     .instr(em_instr), 
-    .stall(mem_stall), 
-    .flush(mem_flush), 
+    .stall(mem_wb_stall), 
+    .flush(mem_wb_flush), 
     .mem_alu_result(wb_alu_result), 
     .mem_read_data(wb_read_data), 
     .mem_pc_4(wb_pc_4), 

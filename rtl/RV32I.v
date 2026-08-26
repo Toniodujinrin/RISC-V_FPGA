@@ -37,7 +37,16 @@ module RV32I
   output [DATA_WIDTH-1:0] mem_addr_in,
   output mem_addr_in_valid,
   output [BLOCK_BITS-1:0] mem_data_out,
-  output mem_data_out_valid
+  output mem_data_out_valid, 
+
+  //io bus behind the lsu's mmio bypass
+  input [DATA_WIDTH-1:0] io_data_out, 
+  input io_ack, 
+  output io_req, 
+  output io_write_read, 
+  output [DATA_WIDTH-1:0] io_data_in, 
+  output [1:0] io_size, 
+  output [DATA_WIDTH-1:0] io_addr_in
 );
 
   data_path
@@ -67,7 +76,15 @@ module RV32I
     .mem_addr_in(mem_addr_in),
     .mem_addr_in_valid(mem_addr_in_valid),
     .mem_data_out(mem_data_out),
-    .mem_data_out_valid(mem_data_out_valid)
+    .mem_data_out_valid(mem_data_out_valid), 
+
+    .io_data_out(io_data_out),
+    .io_ack(io_ack),
+    .io_req(io_req),
+    .io_write_read(io_write_read),
+    .io_data_in(io_data_in),
+    .io_size(io_size),
+    .io_addr_in(io_addr_in)
   );
 
 endmodule
