@@ -26,17 +26,13 @@ def parse_imm(text):
 
 
 def sig_int(handle):
-    """unsigned int view of a signal, None when it holds x/z. cocotb 1.x hands
-       back a BinaryValue and 2.x a LogicArray, so both shapes are covered"""
-    val = handle.value
-    if hasattr(val, "to_unsigned"):     #cocotb 2.x
-        try:
-            return val.to_unsigned()
-        except ValueError:
-            return None
-    if not val.is_resolvable:           #cocotb 1.x
+    """unsigned int view of a signal, None when it holds x/z. a vector comes back
+       as a LogicArray but a 1 bit signal comes back as a scalar Logic, and the
+       two share no accessor beyond int(), which is unsigned on both"""
+    try:
+        return int(handle.value)
+    except ValueError:
         return None
-    return val.integer
 
 
 class I_Mem_Model:
@@ -470,7 +466,7 @@ class Monitor:
                 #probe dut register file state after possible write back
                 r_snap = [0]*32
                 for i in range(32):
-                    r_snap[i] = sig_int(dut.REG_FILE.file[i].value)
+                    r_snap[i] = sig_int(dut.REG_FILE.file[i])
                 dut_pc_queue.put_nowait(pc)
                 dut_reg_queue.put_nowait(r_snap)
 
@@ -531,7 +527,7 @@ async def reset_dut(dut, cycles=4):
        an arithmetic program never reaches the cache or the io bus, so those
        ports only have to stay quiet"""
     dut.reset.value = 1
-    dut.imem_data.value = NOP_WORD
+    #imem_data is left alone, the imem model owns it and is already driving
     dut.mem_ready.value = 1
     dut.mem_data_in_valid.value = 0
     dut.mem_data_in.value = 0
@@ -575,12 +571,18 @@ async def setup(dut, settings):
     assert expected, f"{settings.asm_filename} retired no instructions"
 
     cocotb.start_soon(Clock(dut.clk, 1, unit="ns").start())
-    await reset_dut(dut)
 
+    #every model has to be running before reset drops. the pc is held at 0 through
+    #reset, so the imem model spends those cycles driving program[0], and the first
+    #edge after reset is the one where IF_ID latches it. build the imem model after
+    #the reset and that edge instead latches whatever imem_data happened to hold,
+    #which silently costs the instruction at pc 0
     i_mem = I_Mem_Model(32, dut)
     i_mem.load_binary(settings.bin_filename)
     monitor = Monitor(dut, dut_pc_queue, dut_reg_queue)
     scoreboard = Scoreboard(dut_reg_queue, dut_pc_queue, golden_reg_queue, golden_pc_queue)
+
+    await reset_dut(dut)
     return scoreboard, expected
 
 
