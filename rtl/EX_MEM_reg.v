@@ -28,6 +28,7 @@ module EX_MEM_reg
   input [DATA_WIDTH-1:0] pc_4, 
   input [DATA_WIDTH-1:0] csr_read_data, 
   input [DATA_WIDTH-1:0] instr, 
+  input instr_valid, 
 
   //decode fields still read from MEM onward: funct_3 sizes and signs the
   //sub-word access in MEM, rd is the writeback target and the forwarding tag.
@@ -51,6 +52,7 @@ module EX_MEM_reg
   output reg [DATA_WIDTH-1:0] em_pc_4, 
   output reg [DATA_WIDTH-1:0] em_csr_read_data, 
   output reg [DATA_WIDTH-1:0] em_instr, 
+  output reg em_instr_valid, 
   output reg [FUNCT_3_WIDTH-1:0] em_funct_3, 
   output reg [OP_CODE_WIDTH-1:0] em_op_code, 
   output reg [REG_ADDR_WIDTH-1:0] em_rd
@@ -74,6 +76,7 @@ module EX_MEM_reg
       em_pc_4 <= 0; 
       em_csr_read_data <= 0; 
       em_instr <= 0; 
+      em_instr_valid <= 0; 
       em_funct_3 <= 0; 
       em_op_code <= 0; 
       em_rd <= 0; 
@@ -93,6 +96,7 @@ module EX_MEM_reg
       em_pc_4 <= 0; 
       em_csr_read_data <= 0; 
       em_instr <= 0; 
+      em_instr_valid <= 0; 
       em_funct_3 <= 0; 
       em_op_code <= 0; 
       em_rd <= 0; 
@@ -112,6 +116,7 @@ module EX_MEM_reg
       em_pc_4 <= pc_4; 
       em_csr_read_data <= csr_read_data; 
       em_instr <= instr; 
+      em_instr_valid <= instr_valid; 
       em_funct_3 <= funct_3; 
       em_op_code <= op_code; 
       em_rd <= rd; 

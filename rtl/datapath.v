@@ -65,6 +65,7 @@ module data_path
   wire [$clog2(BHR_SNAPS)-1:0] bhr_snap_index; 
 
   wire ex_jump, ex_branch, ex_prediction_miss, ex_branch_taken; 
+  wire ex_instr_valid; 
   wire [DATA_WIDTH-1:0] ex_branch_target_actual, ex_alu_result, ex_pc; 
   wire [OP_CODE_WIDTH-1:0] ex_op_code; 
   wire [1:0] ex_branch_prediction; 
@@ -154,6 +155,7 @@ module data_path
   // DECODE
   //////////////////////////////////////////////////////////////
   wire [DATA_WIDTH-1:0] id_pc, id_pc_4, id_instr; 
+  wire id_instr_valid; 
   wire [1:0] id_branch_prediction; 
   wire [HIST_BITS-1:0] id_prediction_index; 
   wire [$clog2(BHR_SNAPS)-1:0] id_bhr_snap_index; 
@@ -171,7 +173,7 @@ module data_path
   wire [1:0] id_alu_src_1, id_alu_src_2; 
   wire [2:0] id_mem_to_reg; 
 
-  wire wb_reg_write; 
+  wire wb_reg_write, wb_instr_valid; 
   wire [REG_ADDR_WIDTH-1:0] wb_rd; 
   reg [DATA_WIDTH-1:0] wb_src; 
 
@@ -186,6 +188,7 @@ module data_path
     .clk(clk), 
     .reset(reset), 
     .instr(imem_data), 
+    .instr_valid(1'b1), 
     .pc(if_pc), 
     .pc_4(if_pc_4), 
     .branch_prediction(prediction_out), 
@@ -197,6 +200,7 @@ module data_path
     .id_pc(id_pc), 
     .id_pc_4(id_pc_4), 
     .id_instr(id_instr), 
+    .id_instr_valid(id_instr_valid), 
     .id_branch_prediction(id_branch_prediction), 
     .id_prediction_index(id_prediction_index), 
     .id_bhr_snap_index(id_bhr_snap_index), 
@@ -235,10 +239,18 @@ module data_path
     .alu_src_2(id_alu_src_2), 
     .mem_read(id_mem_read), 
     .mem_write(id_mem_write), 
-    .mem_to_reg(id_mem_to_reg), 
-    .reg_write(id_reg_write), 
+    .mem_to_reg(id_mem_to_reg),
+    .reg_write(id_reg_write),
     .csr_write(id_csr_write)
-  ); 
+  );
+
+  // instr_valid is authoritative and gates all control bits 
+  wire id_jump_q      = id_jump      & id_instr_valid;
+  wire id_branch_q    = id_branch    & id_instr_valid;
+  wire id_mem_read_q  = id_mem_read  & id_instr_valid;
+  wire id_mem_write_q = id_mem_write & id_instr_valid;
+  wire id_reg_write_q = id_reg_write & id_instr_valid;
+  wire id_csr_write_q = id_csr_write & id_instr_valid; 
 
   alu_controller
   #(
@@ -301,15 +313,15 @@ module data_path
   (
     .clk(clk), 
     .reset(reset), 
-    .jump(id_jump), 
-    .branch(id_branch), 
+    .jump(id_jump_q), 
+    .branch(id_branch_q), 
     .alu_src_1(id_alu_src_1), 
     .alu_src_2(id_alu_src_2), 
-    .mem_write(id_mem_write), 
-    .mem_read(id_mem_read), 
+    .mem_write(id_mem_write_q), 
+    .mem_read(id_mem_read_q), 
     .mem_to_reg(id_mem_to_reg), 
-    .reg_write(id_reg_write), 
-    .csr_write(id_csr_write), 
+    .reg_write(id_reg_write_q), 
+    .csr_write(id_csr_write_q), 
     .alu_op(id_alu_op), 
     .op_code(id_op_code), 
     .funct_3(id_funct_3), 
@@ -324,6 +336,7 @@ module data_path
     .pc_4(id_pc_4), 
     .csr_read_data({DATA_WIDTH{1'b0}}), 
     .instr(id_instr), 
+    .instr_valid(id_instr_valid), 
     .branch_prediction(id_branch_prediction), 
     .prediction_index(id_prediction_index), 
     .bhr_snap_index(id_bhr_snap_index), 
@@ -353,6 +366,7 @@ module data_path
     .ex_pc_4(ex_pc_4), 
     .ex_csr_read_data(ex_csr_read_data), 
     .ex_instr(ex_instr), 
+    .ex_instr_valid(ex_instr_valid), 
     .ex_branch_prediction(ex_branch_prediction), 
     .ex_prediction_index(ex_prediction_index), 
     .ex_bhr_snap_index(ex_bhr_snap_index), 
@@ -425,6 +439,7 @@ module data_path
   // MEMORY
   //////////////////////////////////////////////////////////////
   wire em_mem_read, em_mem_write, em_reg_write, em_csr_write; 
+  wire em_instr_valid; 
   wire [2:0] em_mem_to_reg; 
   wire [DATA_WIDTH-1:0] em_alu_result, em_r_data_2, em_imm, em_r_imm; 
   wire [DATA_WIDTH-1:0] em_pc, em_pc_4, em_csr_read_data, em_instr; 
@@ -462,6 +477,7 @@ module data_path
     .pc_4(ex_pc_4), 
     .csr_read_data(ex_csr_read_data), 
     .instr(ex_instr), 
+    .instr_valid(ex_instr_valid), 
     .funct_3(ex_funct_3), 
     .op_code(ex_op_code), 
     .rd(ex_rd), 
@@ -480,6 +496,7 @@ module data_path
     .em_pc_4(em_pc_4), 
     .em_csr_read_data(em_csr_read_data), 
     .em_instr(em_instr), 
+    .em_instr_valid(em_instr_valid), 
     .em_funct_3(em_funct_3), 
     .em_op_code(em_op_code), 
     .em_rd(em_rd)
@@ -537,7 +554,7 @@ module data_path
     .id_rs2(id_rs2), 
     .req_stall(req_stall), 
     .mem_advance(mem_advance), 
-    .sys_busy(id_sys_busy), 
+    .sys_busy(id_sys_busy & id_instr_valid), 
     .pc_stall(pc_stall), 
     .if_id_stall(if_id_stall), 
     .id_ex_stall(id_ex_stall), 
@@ -648,6 +665,7 @@ module data_path
     .r_imm(em_r_imm), 
     .op_code(em_op_code), 
     .instr(em_instr), 
+    .instr_valid(em_instr_valid), 
     .stall(mem_wb_stall), 
     .flush(mem_wb_flush), 
     .mem_alu_result(wb_alu_result), 
@@ -661,7 +679,8 @@ module data_path
     .mem_pc(wb_pc), 
     .mem_r_imm(wb_r_imm), 
     .mem_op_code(wb_op_code), 
-    .mem_instr(wb_instr)
+    .mem_instr(wb_instr), 
+    .mem_instr_valid(wb_instr_valid)
   ); 
 
   always@(*)

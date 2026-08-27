@@ -26,6 +26,7 @@ module MEM_WB_reg
   input [DATA_WIDTH-1:0] r_imm, 
   input [OP_CODE_WIDTH-1:0] op_code, 
   input [DATA_WIDTH-1:0] instr, 
+  input instr_valid, 
 
   input stall, 
   input flush,
@@ -41,7 +42,8 @@ module MEM_WB_reg
   output reg [DATA_WIDTH-1:0] mem_pc, 
   output reg [DATA_WIDTH-1:0] mem_r_imm, 
   output reg [OP_CODE_WIDTH-1:0] mem_op_code,  
-  output reg [DATA_WIDTH-1:0] mem_instr 
+  output reg [DATA_WIDTH-1:0] mem_instr, 
+  output reg mem_instr_valid 
 ); 
 
   
@@ -61,6 +63,7 @@ module MEM_WB_reg
       mem_r_imm <= 0; 
       mem_op_code <= 0; 
       mem_instr <= 0; 
+      mem_instr_valid <= 0; 
     end   
     else if(flush)
     begin 
@@ -76,6 +79,7 @@ module MEM_WB_reg
       mem_r_imm <= 0; 
       mem_op_code <= 0; 
       mem_instr <= 0; 
+      mem_instr_valid <= 0; 
     end 
     else if(!stall)
     begin 
@@ -91,6 +95,7 @@ module MEM_WB_reg
       mem_r_imm <= r_imm; 
       mem_op_code <= op_code; 
       mem_instr <= instr; 
+      mem_instr_valid <= instr_valid; 
     end 
   end 
 

@@ -42,6 +42,7 @@ module ID_EX_reg
   input [DATA_WIDTH-1:0] pc_4, 
   input [DATA_WIDTH-1:0] csr_read_data, 
   input [DATA_WIDTH-1:0] instr, 
+  input instr_valid, 
 
   //prediction payload, handed over from IF_ID_reg. 
   input [1:0] branch_prediction, 
@@ -75,6 +76,7 @@ module ID_EX_reg
   output reg [DATA_WIDTH-1:0] ex_pc_4, 
   output reg [DATA_WIDTH-1:0] ex_csr_read_data, 
   output reg [DATA_WIDTH-1:0] ex_instr, 
+  output reg ex_instr_valid, 
   output reg [1:0] ex_branch_prediction, 
   output reg [HIST_BITS-1:0] ex_prediction_index, 
   output reg [$clog2(BHR_SNAPS)-1:0] ex_bhr_snap_index, 
@@ -109,6 +111,7 @@ module ID_EX_reg
       ex_pc_4 <= 0; 
       ex_csr_read_data <= 0; 
       ex_instr <= 0; 
+      ex_instr_valid <= 0; 
       ex_branch_prediction <= 0; 
       ex_prediction_index <= 0; 
       ex_bhr_snap_index <= 0; 
@@ -139,6 +142,7 @@ module ID_EX_reg
       ex_pc_4 <= 0; 
       ex_csr_read_data <= 0; 
       ex_instr <= 0; 
+      ex_instr_valid <= 0; 
       ex_branch_prediction <= 0; 
       ex_prediction_index <= 0; 
       ex_bhr_snap_index <= 0; 
@@ -169,6 +173,7 @@ module ID_EX_reg
       ex_pc_4 <= pc_4; 
       ex_csr_read_data <= csr_read_data; 
       ex_instr <= instr; 
+      ex_instr_valid <= instr_valid; 
       ex_branch_prediction <= branch_prediction; 
       ex_prediction_index <= prediction_index; 
       ex_bhr_snap_index <= bhr_snap_index; 

@@ -3,7 +3,6 @@ import cocotb
 from cocotb.triggers import RisingEdge, FallingEdge, Event, ReadOnly
 from cocotb.queue import Queue 
 from cocotb.clock import Clock
-from cocotb.types import LogicArray 
 
 def make_program(rng, settings): 
     program = [] 
@@ -137,11 +136,6 @@ class Golden_Model:
     def print_state(self): 
         print(self.file)
         
-
-
-
-
-
         
 async def setup(dut,settings):
     golden_queue, dut_queue = Queue(), Queue()
