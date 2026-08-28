@@ -4,6 +4,7 @@ module cache_controller
   parameter DATA_WIDTH = 32,
   parameter BLOCK_BITS = 32*8,
   parameter WORD_OFF_BITS = 3,  
+  parameter SET_N = 128,
   parameter WB_FIFO_DEPTH = 64
 )
 (
@@ -106,7 +107,7 @@ module cache_controller
     .WORD_OFF_BITS(WORD_OFF_BITS),
     .BYTE_OFF_BITS(2),
     .BLOCK_BITS(BLOCK_BITS),
-    .SET_BITS(7),
+    .SET_BITS($clog2(SET_N)),
     .DATA_WIDTH(DATA_WIDTH),
     .WAY_N(4)
   )
@@ -346,7 +347,7 @@ endmodule
 module write_back_buffer
 #(
   parameter 
-  BLOCK_BITS = 64*8, 
+  BLOCK_BITS = 32*8, 
   ADDR_BITS = 32, 
   DEPTH = 64
 )
@@ -428,10 +429,10 @@ endmodule
 module cache
 #(
   parameter ADDR_BITS = 32,
-  parameter WORD_OFF_BITS = 4,
+  parameter WORD_OFF_BITS = 3,
   parameter BYTE_OFF_BITS = 2,
   parameter BLOCK_OFF_BITS = WORD_OFF_BITS + BYTE_OFF_BITS,
-  parameter BLOCK_BITS = 64*8, //64bytes
+  parameter BLOCK_BITS = 32*8, //32 bytes, 8 words. must agree with WORD_OFF_BITS
   parameter SET_BITS = 7,
   parameter TAG_BITS = ADDR_BITS-(BLOCK_OFF_BITS+SET_BITS),
   parameter DATA_WIDTH = 32,

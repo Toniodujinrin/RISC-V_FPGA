@@ -3,17 +3,13 @@ import re
 import subprocess
 
 import cocotb
-from cocotb.triggers import NextTimeStep, RisingEdge, FallingEdge, ReadOnly
+from cocotb.triggers import RisingEdge, FallingEdge, ReadOnly
 from cocotb.queue import Queue
 from cocotb.clock import Clock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ASM_DIR = os.path.join(HERE, "asm")
 BUILD_DIR = os.path.join(HERE, "build")
-
-#addi x0, x0, 0
-NOP_WORD = 0x00000013
-
 
 def to_signed(val):
     val = 0xFFFFFFFF & val
@@ -35,55 +31,33 @@ def sig_int(handle):
         return None
 
 
-class I_Mem_Model:
-    """asynchronous read instruction memory. the fetched word is presented on the
-       falling edge so IF_ID latches instr(pc) alongside that same pc"""
+def read_image(file_name):
+    """raw little endian image, i.e what objcopy -O binary produces"""
+    with open(file_name, "rb") as file:
+        image = file.read()
+    #a trailing partial word can only come from a truncated image
+    assert len(image) % 4 == 0, f"{file_name} is not a whole number of words"
+    return [int.from_bytes(image[i:i+4], "little") for i in range(0, len(image), 4)]
 
-    def __init__(self, data_width, dut):
-        self.data_width = data_width
-        self.program = []
-        self.dut = dut
-        self._coro = cocotb.start_soon(self._run())
 
-    def load_program(self, file_name, base=2):
-        """one assembled instruction per line. base 2 for binary text, 16 for hex"""
-        with open(file_name) as file:
-            for line in file:
-                line = line.strip()
-                if not line:
-                    continue
-                self.program.append(0xFFFFFFFF & int(line, base))
+def write_mem_file(words, path):
+    """$readmemb format: one word of binary digits per line. inst_mem reads this
+       at time 0 and the array is overwritten by load_memories straight after, so
+       in simulation it only keeps iverilog from reporting a missing file. it is
+       the real init path for synthesis, which has no testbench to write the array"""
+    with open(path, "w") as file:
+        for word in words:
+            file.write(f"{word:032b}\n")
 
-    def load_binary(self, file_name):
-        """raw little endian image, i.e what objcopy -O binary produces"""
-        with open(file_name, "rb") as file:
-            image = file.read()
-        #a trailing partial word can only come from a truncated image
-        assert len(image) % 4 == 0, f"{file_name} is not a whole number of words"
-        for i in range(0, len(image), 4):
-            self.program.append(int.from_bytes(image[i:i+4], "little"))
 
-    def get_instr(self, addr):
-        #imem_addr is the byte addressed pc, program is indexed by word
-        index = addr >> 2
-        if index < len(self.program):
-            return self.program[index]
-        else:
-            return NOP_WORD
+def load_memories(dut, words):
+    imem = dut.IMEM.mem #depth of instruction memory
+    depth = len(imem)
+    assert len(words) <= depth, f"program is {len(words)} words, imem holds {depth}"
 
-    async def _run(self):
-        dut = self.dut
-        while True:
-            await RisingEdge(dut.clk)
-            await ReadOnly()
-            #the address is resolved here, inside the read only phase. it is x
-            #while reset is asserted, before the pc has taken a value
-            addr = sig_int(dut.imem_addr)
-            addr = addr if addr is not None else 0
-            await NextTimeStep()
-            instr = self.get_instr(addr)
-            await FallingEdge(dut.clk)
-            dut.imem_data.value = instr
+    #zero fill past the end of the program.
+    for i in range(depth):
+        imem[i].value = words[i] if i < len(words) else 0
 
 
 class Golden_Model:
@@ -523,14 +497,7 @@ class Scoreboard:
 
 
 async def reset_dut(dut, cycles=4):
-    """hold reset and park every input the datapath brings out to the boundary.
-       an arithmetic program never reaches the cache or the io bus, so those
-       ports only have to stay quiet"""
     dut.reset.value = 1
-    #imem_data is left alone, the imem model owns it and is already driving
-    dut.mem_ready.value = 1
-    dut.mem_data_in_valid.value = 0
-    dut.mem_data_in.value = 0
     dut.io_data_out.value = 0
     dut.io_ack.value = 0
     for _ in range(cycles):
@@ -561,27 +528,20 @@ async def setup(dut, settings):
     golden_reg_queue = Queue()
     dut_pc_queue = Queue()
     dut_reg_queue = Queue()
-
     assemble(settings)
-
-    #the golden runs to completion up front, so its queues are fully populated
-    #before the first clock edge and the expected count is known here
+    #golden runs full program first 
     golden_model = Golden_Model(settings, golden_pc_queue, golden_reg_queue)
     expected = golden_model._run(settings.asm_filename)
     assert expected, f"{settings.asm_filename} retired no instructions"
-
     cocotb.start_soon(Clock(dut.clk, 1, unit="ns").start())
-
-    #every model has to be running before reset drops. the pc is held at 0 through
-    #reset, so the imem model spends those cycles driving program[0], and the first
-    #edge after reset is the one where IF_ID latches it. build the imem model after
-    #the reset and that edge instead latches whatever imem_data happened to hold,
-    #which silently costs the instruction at pc 0
-    i_mem = I_Mem_Model(32, dut)
-    i_mem.load_binary(settings.bin_filename)
+    words = read_image(settings.bin_filename)
+    #padded to the full rom depth so $readmemb has no gap to warn about. the pad is nop
+    depth = len(dut.IMEM.mem)
+    write_mem_file(words + [0]*(depth - len(words)),
+                   os.path.join(BUILD_DIR, "test.mem"))
+    load_memories(dut, words)
     monitor = Monitor(dut, dut_pc_queue, dut_reg_queue)
     scoreboard = Scoreboard(dut_reg_queue, dut_pc_queue, golden_reg_queue, golden_pc_queue)
-
     await reset_dut(dut)
     return scoreboard, expected
 

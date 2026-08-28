@@ -6,6 +6,8 @@ export PYTHONPATH := $(PWD)/..:$(PYTHONPATH)
 RTL = $(PWD)/../../../rtl
 
 VERILOG_SOURCES += $(RTL)/datapath.v
+VERILOG_SOURCES += $(RTL)/inst_mem.v
+VERILOG_SOURCES += $(RTL)/data_mem.v
 VERILOG_SOURCES += $(RTL)/program_counter.v
 VERILOG_SOURCES += $(RTL)/pc_controller.v
 VERILOG_SOURCES += $(RTL)/btb.v

@@ -8,29 +8,18 @@ module data_path
   HIST_BITS = 7, 
   BHR_SNAPS = 4, 
   BTB_DEPTH = 8, 
-  BLOCK_BITS = 64*8, 
-  WB_FIFO_DEPTH = 8
+  BLOCK_BITS = 32*8, //8 words of DATA_WIDTH per block
+  WB_FIFO_DEPTH = 8, 
+  IMEM_DEPTH = 1024, 
+  PROGRAM_FILE = "build/test.mem",
+  CACHE_SET_N = 128, 
+  DATA_MEM_DEPTH = 1024
 )
 (
   input clk, reset, 
-
-  //instruction fetch port. inst_mem.v is still empty, so fetch is brought out
-  //to the top level for now.
-  output [DATA_WIDTH-1:0] imem_addr, 
-  input [DATA_WIDTH-1:0] imem_data, 
-
-  //backing memory behind the data cache
-  input mem_ready, 
-  input mem_data_in_valid, 
-  input [BLOCK_BITS-1:0] mem_data_in, 
-  output mem_write_read, 
-  output [DATA_WIDTH-1:0] mem_addr_in, 
-  output mem_addr_in_valid, 
-  output [BLOCK_BITS-1:0] mem_data_out, 
-  output mem_data_out_valid, 
-
-  //io bus behind the lsu's mmio bypass. no slave exists yet, so it is brought
-  //out to the boundary the same way instruction fetch is
+  //io bus behind the lsu's mmio bypass. no slave exists yet, so this is the
+  //only interface still brought out: inst_mem and data_mem are both
+  //instantiated below, so fetch and the cache's backing port stay internal
   input [DATA_WIDTH-1:0] io_data_out, 
   input io_ack, 
   output io_req, 
@@ -79,7 +68,6 @@ module data_path
   //combinational off if_pc. resolve this skew with the hazard unit.
   wire bp_taken = prediction_valid & prediction_out[1]; 
 
-  assign imem_addr = if_pc; 
 
   program_counter
   #(.DATA_WIDTH(DATA_WIDTH))
@@ -107,6 +95,23 @@ module data_path
     .trap(1'b0), 
     .pc_next(if_pc_next)
   ); 
+  
+  wire [DATA_WIDTH-1:0] imem_araddr = reset?32'd0:if_pc_next; 
+  wire [DATA_WIDTH-1:0] imem_data; 
+  wire imem_out_valid; 
+  inst_mem
+  #(
+    .DATA_WIDTH(DATA_WIDTH), 
+    .IMEM_DEPTH(IMEM_DEPTH), 
+    .PROGRAM_FILE(PROGRAM_FILE)
+  )
+  IMEM
+  (
+    .clk(clk),
+    .imem_addr(imem_araddr), 
+    .imem_data(imem_data), 
+    .output_valid(imem_out_valid) 
+  );
 
   btb
   #(
@@ -188,7 +193,7 @@ module data_path
     .clk(clk), 
     .reset(reset), 
     .instr(imem_data), 
-    .instr_valid(1'b1), 
+    .instr_valid(imem_out_valid), 
     .pc(if_pc), 
     .pc_4(if_pc_4), 
     .branch_prediction(prediction_out), 
@@ -453,6 +458,16 @@ module data_path
   wire [DATA_WIDTH-1:0] cpu_data_in, cpu_addr_in; 
   wire [1:0] cpu_size; 
 
+  //backing memory behind the data cache
+  wire mem_ready; 
+  wire mem_data_in_valid; 
+  wire [BLOCK_BITS-1:0] mem_data_in;  
+  wire mem_write_read; 
+  wire [DATA_WIDTH-1:0] mem_addr_in;  
+  wire mem_addr_in_valid; 
+  wire [BLOCK_BITS-1:0] mem_data_out;  
+  wire mem_data_out_valid; 
+
   EX_MEM_reg
   #(
     .DATA_WIDTH(DATA_WIDTH), 
@@ -571,7 +586,9 @@ module data_path
     .ADDR_BITS(DATA_WIDTH), 
     .DATA_WIDTH(DATA_WIDTH), 
     .BLOCK_BITS(BLOCK_BITS), 
-    .WB_FIFO_DEPTH(WB_FIFO_DEPTH)
+    .WB_FIFO_DEPTH(WB_FIFO_DEPTH),
+    .WORD_OFF_BITS($clog2(BLOCK_BITS/DATA_WIDTH)), 
+    .SET_N(CACHE_SET_N)
   )
   D_CACHE
   (
@@ -593,6 +610,27 @@ module data_path
     .mem_addr_in_valid(mem_addr_in_valid), 
     .mem_data_out(mem_data_out), 
     .mem_data_out_valid(mem_data_out_valid)
+  ); 
+
+  data_mem //simulate byte addressed memory
+  #(
+    .DATA_WIDTH(DATA_WIDTH), 
+    .BLOCK_BITS(BLOCK_BITS), //32 bytes or 8 words 
+    .D_MEM_DEPTH(DATA_MEM_DEPTH), 
+    .WORD_OFF_BITS($clog2(BLOCK_BITS/DATA_WIDTH))
+  )
+  D_MEM
+  (
+    .clk(clk),
+    .reset(reset), 
+    .mem_ready(mem_ready), 
+    .data_out_valid(mem_data_in_valid), 
+    .data_out(mem_data_in), 
+    .addr_in(mem_addr_in), 
+    .addr_in_valid(mem_addr_in_valid), 
+    .data_in(mem_data_out), 
+    .data_in_valid(mem_data_out_valid), 
+    .write_read(mem_write_read)
   ); 
 
   BE_logic

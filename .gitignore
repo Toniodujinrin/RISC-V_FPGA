@@ -1,9 +1,27 @@
-.claude 
-.venv 
-db 
-output_files 
-incremental_db 
+# --- python / cocotb env ---
+.venv
+.claude
+**/__pycache__
+
+# --- cocotb + simulator output ---
+# NOTE: was "sim_builf" until 27 Aug, so none of this was actually ignored
+**/sim_build/
+**/results.xml
+**/logfile.txt
+*.vcd
+*.fst
+*.vvp
+
+# --- assembled test programs (rebuilt by the datapath TB on every run) ---
+tb/cocotb/*/build/
+
+# --- quartus ---
+db
+incremental_db
+output_files
 syn
-*.qpf 
+*.qpf
 *.qsf
-rtl/*.bak
+
+# --- editor / misc ---
+*.bak

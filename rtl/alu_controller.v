@@ -14,11 +14,6 @@ module alu_controller
   output reg [3:0] alu_op
 ); 
 
-
-
-
-
-
 always@(*)
 begin 
   alu_op = `NON; 
@@ -60,8 +55,3 @@ end
 
 endmodule
 
-
-// RESOLVED 22 Aug: NOP_TYPE is gone. It held 5'b00000, which is the LOAD
-// opcode and was a duplicate of I_TYPE_3; both collapsed onto `I_TYPE_3 when
-// the constants moved to riscv_defs.vh. Mapping it to `ADD stays correct --
-// loads need ADD for address calculation.

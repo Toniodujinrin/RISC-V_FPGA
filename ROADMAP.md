@@ -4,8 +4,23 @@ Reproducing **RV32I46F_5SP** from *BASIC_RV32s: An Open-Source Microarchitectura
 
 - **Start:** Sat 22 Aug 2026
 - **Target:** Sun 23 Aug (core done) → **hard deadline Tue 25 Aug**
-- **Toolchain present:** `iverilog`, `verilator`, `gtkwave`, `cocotb` (in `.venv`)
-- **Toolchain missing:** RISC-V GCC, FPGA vendor tools — see [Day 0](#day-0--saturday-morning-unblock-3-h)
+- **Toolchain present:** `iverilog`, `verilator`, `gtkwave`, `cocotb` 2.0.1 (in `.venv`), **RISC-V binutils/GCC (27 Aug)**
+- **Toolchain missing:** FPGA vendor tools only — see [Day 0](#day-0--saturday-morning-unblock-3-h)
+
+> **28 Aug — both memories are inside the core.** `inst_mem.v` and `data_mem.v` are written and
+> instantiated in `datapath.v`, so neither instruction fetch nor the cache's backing port crosses the
+> module boundary any more; only the io bus does. Fetch is a synchronous ROM re-timed against the PC
+> ([Instruction fetch](#instruction-fetch-is-a-retimed-synchronous-rom-28-aug)), and the cache is
+> backed by a real word-wide memory with a counter-driven block burst
+> ([The backing memory](#the-backing-memory-28-aug)). `r_type.s` still passes end to end through both.
+>
+> **27 Aug — the pipeline executes assembled programs and self-checks against a golden model.**
+> `tb/cocotb/datapath` assembles a `.s` with real `as`/`objcopy`, feeds the image to the core through an
+> instruction-memory model, and compares retired PC + all 32 registers per instruction against a Python
+> ISA model. `r_type.s` (R-type + immediate arithmetic, back-to-back dependencies) passes.
+> **This is the oracle the plan kept asking for**, arrived at from the other direction: a golden ISA
+> model in Python rather than a single-cycle core in Verilog. See
+> [The datapath testbench](#the-datapath-testbench-27-aug).
 
 ---
 
@@ -148,8 +163,8 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 | `rtl/control.v` | 88 | ✅ | **Updated 23 Aug** — `mem_to_reg` widened to 3 bits (5 writeback sources); standalone `lui` output folded in as encoding `011`. No SYSTEM arm yet |
 | `rtl/pc_controller.v` | 38 | ✅ | **Done 23 Aug** — priority encoder, lints clean. See [PC redirect priority](#pc-redirect-priority) |
 | `rtl/program_counter.v` | 22 | ✅ | **Done 23 Aug** — async-reset PC register |
-| `rtl/inst_mem.v` | 0 | — | **empty** |
-| `rtl/data_mem.v` | 0 | — | **empty** |
+| `rtl/inst_mem.v` | 33 | ✅ | **Done 28 Aug** — synchronous ROM, `$readmemb` init, range-checked `output_valid`. Re-timed against the PC rather than stalled; see [Instruction fetch](#instruction-fetch-is-a-retimed-synchronous-rom-28-aug) |
+| `rtl/data_mem.v` | 104 | ✅ | **Done 28 Aug** — word-wide array, counter-driven block burst, latching FSM. Backs the cache. Verified with `tb/tb_dmem.v`; see [The backing memory](#the-backing-memory-28-aug) |
 | `rtl/hazard_detector.v` | 85 | ✅ | **Done 25 Aug** — pure combinational. `req_stall` outranks every redirect; exports `mem_advance` to the LSU. Wired into `datapath.v` |
 | `rtl/lsu.v` | 139 | ✅ | **Done 25 Aug** — owns the cache handshake: issue-once, valid held until accepted, combinational `req_stall`, `DONE` state, latched load data, MMIO bypass. Wired into `datapath.v`. See [The memory-stall handshake](#the-memory-stall-handshake) |
 | `rtl/IF_ID_reg.v` | 74 | ✅ | **Done 23 Aug** — carries the full prediction payload; flush drops it. Verified in sim |
@@ -157,9 +172,12 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 | `rtl/EX_MEM_reg.v` | 124 | ✅ | **Done 23 Aug** — `em_` prefix. Completes all four pipeline registers; chain verified in sim |
 | `rtl/MEM_WB_reg.v` | 97 | ✅ | **Done 23 Aug** — module renamed `MEM_WB_reg` to match the file. All 5 writeback sources cross. `csr_write` still to add for Day 3 |
 | `rtl/BE_logic.v` | 22 | ✅ | **Done 24 Aug** — load sign-extension, the surviving half of the paper's `BE_Logic`. Verified with the cache end to end |
-| `rtl/datapath.v` | 700 | ✅ | **Wired 24 Aug, LSU + hazard unit slotted in 25 Aug.** All five stages plus `LSU`/`HAZARD`; the stall/flush stubs are gone and the `io_*` bus is brought out to the boundary. Whole core elaborates under `iverilog -g2012`. CSR is still a TODO stub. See [Datapath wiring](#datapath-wiring-24-aug) |
+| `rtl/datapath.v` | 700 | ✅ | **Wired 24 Aug, LSU + hazard unit 25 Aug, executing programs 27 Aug, both memories internal 28 Aug.** All five stages plus `LSU`/`HAZARD`; the stall/flush stubs are gone and the `io_*` bus is brought out to the boundary. Runs assembled R-type/I-type programs correctly against a golden model. CSR is still a TODO stub. See [Datapath wiring](#datapath-wiring-24-aug), [The datapath testbench](#the-datapath-testbench-27-aug) |
 
-**Committed through `5f7ea85` ("added btb for branching").** Note that cocotb build artifacts are tracked — `__pycache__/`, `sim_build/`, `*.vcd`, `results.xml` — so every simulation run dirties the tree. Worth a `.gitignore` + `git rm --cached` before the diffs start mattering for debugging.
+**Committed through `f324e45` ("tb passes with r_type").** `.gitignore` landed 27 Aug — but it has a
+typo, **`sim_builf` should be `sim_build`**, so every simulation still dirties the tree. It is also
+missing `*.vcd`, `*.fst`, `logfile.txt` and `tb/cocotb/*/build/`. Fix that before the diffs start
+mattering for debugging.
 
 ---
 
@@ -177,7 +195,15 @@ RV32I46F      single-cycle + traps
 RV32I46F_5SP  5-stage pipelined  ← the target
 ```
 
-**Do not skip to the pipeline.** A single-cycle core that executes real programs is your oracle: when the pipeline produces a wrong register value on Sunday night, you diff its architectural state against the single-cycle core running the same binary and find the exact instruction where they diverge. Without that oracle you are debugging a pipeline by staring at waveforms, which is how this project misses Tuesday.
+**Do not skip to the pipeline.** A single-cycle core that executes real programs is your oracle: when the pipeline produces a wrong register value, you diff its architectural state against the single-cycle core running the same binary and find the exact instruction where they diverge. Without that oracle you are debugging a pipeline by staring at waveforms, which is how this project misses Tuesday.
+
+> **Superseded 27 Aug — the oracle exists, and it isn't a single-cycle core.** The
+> [datapath testbench](#the-datapath-testbench-27-aug) compares the pipeline against a **golden ISA
+> model in Python**, per retired instruction, which serves the identical purpose: it names the exact
+> instruction where behaviour diverges. It is also strictly cheaper — a Python model costs no RTL, no
+> second memory interface and no second thing to keep in sync as the ISA grows. **Do not now write a
+> single-cycle core to satisfy this paragraph.** The paper's incremental order still has value as a
+> *bring-up* strategy; it is no longer needed as a *debugging* one.
 
 The one deviation I'd make from the paper's order: **do the pipeline before CSR/traps.** The pipeline is the risky, schedule-threatening part and it's the headline feature. CSRs are mostly a register file with side effects and can be added to a working pipeline in an evening. That's why P1 sits after P0 in the table above.
 
@@ -205,7 +231,9 @@ Start each day at the top and work down: the cheap items build momentum and, mor
 
 ## Day 0 — Saturday morning, unblock (~3 h)
 
-- [ ] `★☆☆ P0` **Stop tracking build artifacts.** Every simulation run currently dirties the tree, which will bury the real diffs exactly when you need them for debugging.
+- [~] `★☆☆ P0` **Stop tracking build artifacts.** — **partly done 27 Aug.** `.gitignore` exists but
+  **`sim_builf` is a typo for `sim_build`**, so simulation output is still tracked; `*.vcd`, `*.fst`,
+  `logfile.txt` and `tb/cocotb/*/build/` are missing from it too. Every simulation run currently dirties the tree, which will bury the real diffs exactly when you need them for debugging.
   ```bash
   printf '.venv/\n.claude/\n*.vcd\n*.fst\nsim_build/\n__pycache__/\nresults.xml\nlogfile.txt\n' > .gitignore
   git rm -r --cached tb/cocotb/register_file/{__pycache__,sim_build} \
@@ -221,11 +249,13 @@ Start each day at the top and work down: the cheap items build momentum and, mor
   iverilog -g2001 -I rtl -o /dev/null rtl/<mod>.v
   ```
   Add a `Makefile` at the root with `make lint`, `make test` (runs every cocotb suite), `make wave`. A 30-minute investment that pays back by Sunday afternoon. Any cocotb Makefile for a module that includes the header needs `VERILOG_INCLUDE_DIRS` set, or the build fails with `Include file riscv_defs.vh not found`.
-- [ ] `★★☆ P0` **Get a RISC-V toolchain.** Needed to produce test programs; without it you are hand-assembling hex by Sunday.
+- [x] ~~`★★☆ P0` **Get a RISC-V toolchain.**~~ — **done 27 Aug.** `binutils-riscv64-unknown-elf` +
+  `gcc-riscv64-unknown-elf` from the Ubuntu archive, at `/usr/bin/riscv64-unknown-elf-*`. The datapath TB
+  shells out to `as`/`objcopy` on every run, so this is exercised continuously rather than trusted.
   ```bash
   sudo apt install gcc-riscv64-unknown-elf   # then use -march=rv32i -mabi=ilp32
   ```
-  **Now a hard blocker, not a timebox** — as of the 23 Aug goal change the deliverable *is* compiled C,
+  Was **a hard blocker, not a timebox** — as of the 23 Aug goal change the deliverable *is* compiled C,
   so there is no hand-assembly fallback that still reaches the target. It is either five minutes or a
   two-hour rabbit hole; if the Debian package will not target rv32i cleanly, try
   `xpack-dev-tools/riscv-none-elf-gcc` or a prebuilt SiFive toolchain rather than deferring. You need
@@ -244,7 +274,9 @@ Start each day at the top and work down: the cheap items build momentum and, mor
 | Suite | State | Covers |
 |---|---|---|
 | `tb/cocotb/register_file` | ✅ 100 random, passing | read/write, `x0` hardwiring |
-| `tb/tb_ctrl.v`, `tb/tb_l1.v` | ✅ directed | L1 write-back path, FIFO-full drain |
+| `tb/cocotb/datapath` | ✅ `r_type.s` passing | **whole-core, self-checking against a golden ISA model** — see [The datapath testbench](#the-datapath-testbench-27-aug) |
+| `tb/tb_ctrl.v`, `tb/tb_l1.v` | ✅ directed | L1 write-back path, FIFO-full drain, sub-word access |
+| `tb/tb_dmem.v` | ✅ directed, **new 28 Aug** | `cache_controller` + `data_mem` together: refill, second refill, address wrap, dirty eviction reaching memory |
 | `tb/cocotb/instruction_decoder` | ❌ **to write** | every format's immediate, shift-imm `funct_7`, the LOAD/SYSTEM funct_3 collision |
 | `tb/cocotb/alu` | ❌ **to write** | all 16 ops, signed compares, `SRA` sign-fill, shamt masking, `` `ADD_C `` bit-0 clear |
 
@@ -260,6 +292,145 @@ Start each day at the top and work down: the cheap items build momentum and, mor
 - `` `ADD_C `` with an odd sum (masked), an already-even sum (unchanged), and a negative immediate — this is the `JALR` target path
 - `SRA` vs `SRL` on a negative operand — sign-fill vs zero-fill
 - `LT` vs `LTU` on `0xFFFFFFFF` — signed says less-than, unsigned says not
+
+### Instruction fetch is a retimed synchronous ROM (28 Aug)
+
+`inst_mem.v` is a **synchronous** ROM — its read is registered, which is what lets it infer M10K
+instead of burning LUTs. That is a one-cycle latency the old async-fetch wiring did not expect.
+
+**A fixed latency is fixed by retiming, not by stalling.** Address the ROM with `if_pc_next` rather
+than `if_pc` and its output register sits *in parallel* with the PC register instead of in series
+behind it:
+
+```
+addressed with if_pc          addressed with if_pc_next
+pc_next -[PC]- if_pc -[ROM]-  pc_next -+-[PC ]- if_pc
+          1 deep    2 deep             +-[ROM]- imem_data     both 1 deep
+```
+
+Both are then one register behind `pc_next`, the skew is zero, and `imem_data` is aligned with
+`if_pc` exactly as an async read was — **no stall, no extra pipeline stage, no CPI cost.**
+
+Three things that are easy to get wrong here, all of which cost the instruction at pc 0:
+
+- **`imem_araddr = reset ? 0 : if_pc_next`.** During reset the PC is *held* at 0 while `pc_controller`
+  still computes `if_pc + 4`, so the parallel property breaks unless the address is forced to 0.
+- **The ROM output register must not be reset.** It has to keep capturing *through* reset so
+  `mem[0]` is already present on the first cycle after release — same discipline as `register_file`'s
+  array, which takes its power-up state from `initial` and has no reset port.
+- **`output_valid` must be 1 coming out of reset**, not 0. Wire it to `IF_ID.instr_valid`; reset it
+  low and instruction 0 becomes a bubble.
+
+**A stall (and a second LSU in fetch) is only needed for *variable* latency — i.e. an I-cache.** That
+is [E6] in marathon, `★★★ P2`, and cut #3 in triage. `.text` in on-chip ROM is a legitimate design
+point, not a compromise. Note the BTB already assumes this future: it exists precisely because the
+instruction word will not be available in IF once fetch is cached, so nothing has to change when an
+I-cache eventually lands.
+
+**Cost to watch:** `imem_araddr` now depends on `pc_controller` → `btb_target`, so the BTB lookup and
+the ROM address decode are in the same cycle. At ~93 MHz that wants checking in the fitter report, not
+assuming.
+
+---
+
+### The backing memory (28 Aug)
+
+`data_mem.v` answers the cache's block port. The decision that shaped it: **the array is 32 bits wide
+with a counter, not 512 bits wide, and not byte-addressed.**
+
+- The address *space* is byte-addressed because RISC-V is; the array *width* is an implementation
+  choice invisible above the cache. Those are separate questions and conflating them is what makes
+  this look like a hard call.
+- **Byte-wide buys nothing** — the cache already owns lane selection and write merge (23 Aug), so an
+  8-bit array only makes the counter 64 deep instead of 8.
+- **Block-wide costs the thing the model exists for.** A 256-bit row answers in one cycle, hiding
+  exactly the stall bugs a backing model is meant to expose. The 8-beat counter gives realistic
+  latency *as a consequence of the structure*, and `$readmemh` stays 1:1 with `objcopy` output.
+- It is also the shape [E4]'s Avalon adapter needs, so that becomes a re-parameterisation rather than
+  new thinking.
+
+**MMIO does not constrain any of this.** `lsu.v` splits IO on `addr[31:28] == 4'hF` *before* routing,
+so an IO access never reaches the cache or `data_mem` at all.
+
+**The bug worth remembering: `mem_ready` is an accept signal, not a status flag.** `cache_controller`
+drops `mem_addr_in_valid` (and `mem_data_out_valid`) the cycle it sees `mem_ready` — `l1.v:311`,
+`l1.v:322`. A backing memory that advances its burst counter while `addr_in_valid` is high therefore
+freezes on the second word and **hangs the core on the first cache miss**. The burst has to run off
+latched state and an FSM, never off the input valids.
+
+**Two things that look load-bearing and are not** — established by mutation testing, not by reading:
+
+- Latching `addr_in` is *defensive*. `cache_controller` never clears `mem_addr_in`; it only overwrites
+  it on the next request, so the address holds through the burst anyway.
+- Masking the block base is *defensive*. `l1.v:735` already aligns:
+  `miss_addr <= {addr_r[31:BLOCK_OFF_BITS], {BLOCK_OFF_BITS{1'b0}}}`, and likewise `evicted_address`.
+
+Both are worth keeping — they make `data_mem` correct against any controller instead of depending on
+undocumented hold-and-align behaviour in this one — but neither is what fixed the hang.
+
+**Still open:** `data_mem` has no `$readmemh`, so the array powers up x. The cocotb TB zeroes it, but
+`.data` initialisation is needed before the `sum.c` rung of the [C ladder](#the-c-ladder).
+
+---
+
+### The datapath testbench (27 Aug)
+
+`tb/cocotb/datapath/` — the whole-core, self-checking harness. This is what makes the `.S` suite in
+[Day 1](#test-programs-tbcocotbdatapathasm) and the [C ladder](#the-c-ladder) mechanical to add:
+write a `.s`, add a `Settings(...)`, done. **Extensive testing is now cheap; it wasn't before.**
+
+```
+ asm/x.s --as--> build/x.o --objcopy--> build/x.bin --> I_Mem_Model --> imem_data
+     |                                                                      |
+     +--> Golden_Model (Python ISA sim) --> (pc, regs) queues --> Scoreboard <-- Monitor <-- wb_*
+```
+
+Four pieces, matching the `register_file` structure:
+
+- **`Golden_Model`** parses the same `.s` the assembler sees and executes it, queueing `(pc, regs[32])`
+  per retired instruction. It runs to completion *before* the first clock edge, so the expected
+  transaction count is known up front and `finish()` has a real target rather than a timeout.
+- **`load_memories`** writes the image straight into `dut.IMEM.mem` and zeroes `dut.D_MEM.mem`.
+  **Superseded the `I_Mem_Model` bus model on 28 Aug**, when both memories moved inside `data_path` and
+  there was no longer a port to drive. `inst_mem`'s own `$readmemb` runs at time 0, before the test
+  body, so it cannot load a per-test program — the TB writes the `.mem` file anyway to keep the
+  synthesis path honest. Unused ROM locations are filled with `nop`, never left x and never zero.
+- **`Monitor`** samples at `wb_instr_valid`, records `wb_pc`, then waits for the falling edge (the
+  register file's write edge) before snapshotting all 32 registers.
+- **`Scoreboard`** compares both queues and prints a per-register diff on mismatch.
+
+**`ebreak` terminates the program.** The golden stops when it decodes one; without it the golden just
+runs off the end of the parsed list and the DUT keeps retiring NOPs. `r_type.s` has none and passes on
+the length guard, but every test from here should end with `ebreak` so the two ends agree explicitly.
+
+**Five things this cost to get right** — the last three are core-facing and will bite again:
+
+- **A zero instruction word is not a safe filler.** `op_code[6:2]` of `32'd0` is `` `I_TYPE_3 `` — the
+  *load* class. Fetching past the end of the program therefore issues a cache request that the tied-off
+  backing memory never answers, and the pipeline hangs with no obvious cause. `I_Mem_Model` returns
+  `0x00000013` (`addi x0,x0,0`) instead. **This is a real property of the core, not a TB artifact** —
+  it will matter again the moment fetch goes through `l1.v` and a miss returns zeros.
+- **Every model must be running before reset drops.** The PC is held at 0 through reset, so those reset
+  cycles are exactly when the imem model has to be driving `program[0]`. Building it after
+  `reset_dut()` meant the first post-reset edge latched a stale `imem_data` and **silently ate the
+  instruction at pc 0** — every arithmetic result downstream was then wrong, with mismatches that
+  pointed nowhere near the cause.
+- **The golden's instruction index must equal the assembler's word index.** Comment lines, `.`
+  directives and `label:`-on-the-same-line all break the 1:1 mapping and corrupt every branch offset.
+  `load_asm` strips them. Related: an instruction the golden can't decode now **raises** rather than
+  being skipped — skipping desyncs the queues by one and every later comparison is garbage.
+- **cocotb 2.x: a 1-bit signal is a `Logic`, a vector is a `LogicArray`.** They share no accessor —
+  `Logic` has neither `.to_unsigned()` nor `.integer`. `int()` is the one thing that works on both, is
+  unsigned on both, and raises `ValueError` on x/z. Anything version-sniffing instead of type-sniffing
+  is wrong.
+- **`objcopy -O binary` output has no line structure.** It is a raw image — 4 little-endian bytes per
+  instruction, no newlines. Size must be exactly 4 x instruction count. Adding a `.data` section or
+  `.align` later will insert padding and break the 1:1 word mapping the golden assumes.
+
+**Venv note:** a venv bakes its absolute path into every console script shebang, so moving the repo
+breaks `cocotb-config` (and with it the whole `Makefile.sim` include) while `import cocotb` keeps
+working — a confusing pair of symptoms. Repaired 27 Aug after the move under `amd_2027_plan/`; recreate
+the venv or rewrite the shebangs if the repo moves again.
 
 ### Testbench gotchas — learned the hard way on `register_file`, 22 Aug
 
@@ -341,9 +512,16 @@ the sequential case. Two adders, two consumers — don't share them.
 - [ ] `★★☆ P0` **⚠** `tb/cocotb/core_single/` — self-checking harness: load a `.hex`, run N cycles, assert final register and memory state. Position forced: you want this ready *before* the datapath, so the first thing you do with `core_single.v` is run a program through it rather than stare at waves.
 - [ ] `★★★ P0` `rtl/core_single.v` — top-level datapath wiring it all together. The hard one, and the one everything else today exists to support.
 
-### Test programs to write today (`tests/asm/`)
+### Test programs (`tb/cocotb/datapath/asm/`)
 
-Each is ~10 instructions and ends by writing a known value to a known address:
+> **Relocated and re-scoped 27 Aug.** These live in `tb/cocotb/datapath/asm/` and are checked by the
+> [datapath testbench](#the-datapath-testbench-27-aug) against the golden model, per instruction —
+> not by writing a known value to a known address and asserting once at the end. That was the plan when
+> there was no golden model; per-instruction comparison localises a failure to the exact instruction
+> instead of telling you only that the program ended wrong. End each one with `ebreak`.
+>
+> - ✅ `r_type.s` — R-type + immediate arithmetic, back-to-back dependencies. **Passing.**
+> - 🚧 `b_type.s` — created, empty.
 
 1. `arith.S` — every R-type op, checked against expected results
 2. `imm.S` — every I-type op, **including `ADDI` with a negative immediate** (catches [B2](#b2--alu_controllerv)'s `funct_7` bug)
@@ -493,7 +671,19 @@ Three things to hold onto when wiring it:
 
 `prediction_miss` drives the flush; `branch_taken` trains the predictor (the paper's `EX.BTaken`); `branch` itself is the update enable (`EX.branch`).
 
-**Exit criteria:** all Day-1 programs pass unpadded on the pipelined core, and its final architectural state matches the single-cycle core cycle-for-cycle at retirement.
+**Exit criteria:** all Day-1 programs pass unpadded on the pipelined core, and its retired
+architectural state matches the golden model instruction-for-instruction.
+
+> **Status 27 Aug — partly met.** The comparison mechanism exists and works: the
+> [datapath testbench](#the-datapath-testbench-27-aug) checks retired PC and all 32 registers against a
+> golden ISA model on every instruction, which is a stronger check than the original "matches the
+> single-cycle core at retirement" and does not require writing a single-cycle core at all. `r_type.s`
+> passes, exercising fetch, decode, both forwarding paths and writeback. **What remains is coverage,
+> not mechanism** — branches, jumps, loads/stores and the hazard cases still need programs written.
+> Note the load/store tests will be the first to exercise the LSU and cache stall path through this
+> harness, which needs a backing-memory model behind `l1.v` ([Day 4](#day-4--tuesday-cache-integration-p2));
+> the TB currently ties `mem_ready` high and never answers, which is fine only while no program loads
+> or stores.
 
 ---
 
@@ -544,8 +734,12 @@ Only start this if Monday's exit criteria are met and committed on a tag.
   P2 expensive; with it gone, the cache is now the memory from the start
   ([Scope call](#scope-call-read-this-first)).
 - [ ] `★☆☆ P2` **⚠** Re-run the **entire** test suite after wiring. A cache is a correctness-neutral optimisation: if any test changes result, the cache or the stall path is wrong, not the test. Trivial to run, last by dependency.
-- [ ] `★★☆ P2` Build a backing-memory model with realistic latency (`mem_ready` deasserted for N cycles) — `tb/tb_ctrl.v` already has the shape of one to borrow
-- [ ] `★★☆ P2` Wire `cache_controller` from `rtl/l1.v` in as the **data** memory only. Leave instruction fetch on the simple RAM — one variable at a time.
+- [x] ~~`★★☆ P2` Build a backing-memory model with realistic latency~~ — **done 28 Aug as real RTL,
+  not a model.** `rtl/data_mem.v` gets its latency from the 8-beat block burst rather than an injected
+  delay. See [The backing memory](#the-backing-memory-28-aug)
+- [x] ~~`★★☆ P2` Wire `cache_controller` in as the **data** memory only.~~ — **done 28 Aug.** The
+  cache is the data path's memory, backed by `data_mem`; fetch stays on a plain ROM, which is exactly
+  the "one variable at a time" ordering this item asked for.
 - [ ] `★★☆ P2` Pipeline must stall on `!cpu_ready_out` and wait for `cpu_data_out_valid`. Your Day-1 interface decision makes this a hazard-unit change, not a datapath change.
 - [ ] `★★★ P2` Only then consider the instruction side. Two independent stall sources into the same pipeline is materially harder than one.
 
@@ -886,7 +1080,8 @@ Hardwire in the register file (B4-2) rather than special-casing in the control p
 
 - [ ] Every module lints clean under `verilator -Wall`
 - [ ] All test programs pass on the 5-stage core, unpadded
-- [ ] Pipelined core's retired architectural state matches the single-cycle core on every test
+- [x] Pipelined core's retired state is checked instruction-by-instruction against a golden ISA model
+      (`tb/cocotb/datapath`) — **mechanism done 27 Aug, replaces the single-cycle-core oracle**
 - [ ] Branch predictor demonstrably reduces mispredicts on a loop benchmark
 - [ ] `ECALL` → handler → `MRET` round-trips correctly
 - [ ] Cache integration leaves every test result unchanged

@@ -11,16 +11,48 @@ supposed to happen on.
 > `fib_rec`, `factorial`, and everything the paper's final `RV32I46F_5SP` + SoC can do, up to and
 > including Dhrystone.
 
-**Deadline: Friday 28 Aug 2026.** Today is Tue 25 Aug. That is **today's evening + Wed + Thu + Fri
-≈ 32–36 working hours**, against a backlog below that totals ~70 h if you do all of it. So this
-document is as much a *cut list* as a task list — see [Triage](#triage--what-to-cut-and-in-what-order)
-and [Time budget](#time-budget-vs-reality) at the bottom. Read those two sections before you start,
-not after.
+**Deadline: Friday 28 Aug 2026. Today is Thu 27 Aug — one working day left.** That is **this evening
++ Friday ≈ 12–16 working hours**, against a backlog below that totals ~60 h. The original plan assumed
+32–36 h; two days have gone. **[Triage](#triage--what-to-cut-and-in-what-order) is no longer a
+contingency — it is the plan.** Read it and [Time budget](#time-budget-vs-reality) before you touch
+anything else.
 
-**Progress, 25 Aug evening.** `rtl/lsu.v` and `rtl/hazard_detector.v` written and both now wired into
-`datapath.v` — [A1](#a1), [A2](#a2), [A8](#a8) and [B3](#b3) closed, which were ranked 2, 3 and 5. The
-whole core elaborates under `iverilog -g2012`. The critical path is now **IO slaves → backing memory →
-regression suite**.
+**Progress, 28 Aug — deadline day.** [B1](#b1) is closed, which was the item blocking both [A5](#a5)
+and Track C:
+
+- ✅ **Both memories written and instantiated inside `data_path`.** `inst_mem.v` is a synchronous ROM
+  re-timed against the PC — a fixed latency costs no stall and no pipeline stage, so **the fetch-side
+  LSU that looked necessary is not**. `data_mem.v` is a word-wide array with a counter-driven block
+  burst, backing the cache. Both verified:
+  [ROADMAP § Instruction fetch](ROADMAP.md#instruction-fetch-is-a-retimed-synchronous-rom-28-aug),
+  [§ The backing memory](ROADMAP.md#the-backing-memory-28-aug).
+- ✅ **`tb/tb_dmem.v`** — `cache_controller` + `data_mem` together, mutation-tested. It caught a
+  deadlock that would have hung the core on the first cache miss: `mem_ready` is an *accept* signal,
+  and a burst that advances on the input valids freezes on its second word.
+- ✅ **The datapath regression is green again** after both memories went internal (`r_type.s`,
+  6 retired, 0 errors) — it now drives the real ROM rather than a bus model.
+
+**What is left is now a short list:** the IO slave ([B2](#b2)/[B3](#b3)), `crt0.S` ([C2](#c2)), and
+the C ladder ([C3](#c3)). Everything on the critical path below that line is written and tested.
+
+**Progress, 27 Aug.** Two of the three critical-path items from 25 Aug are closed, and one of them was
+the risky one:
+
+- ✅ **The core executes assembled programs and self-checks.** `tb/cocotb/datapath` assembles a `.s`
+  with real `as`/`objcopy`, drives the image into the core, and compares retired PC + all 32 registers
+  against a Python golden ISA model, per instruction. `r_type.s` (R-type + immediate arithmetic,
+  back-to-back dependencies) passes. See
+  [ROADMAP § The datapath testbench](ROADMAP.md#the-datapath-testbench-27-aug).
+- ✅ **RISC-V toolchain installed** — [C1](#c1) closed, which was ranked 5 and flagged 🔥 as the long
+  pole that could stall on something outside your control. It didn't.
+- ✅ `rtl/lsu.v` + `rtl/hazard_detector.v` written and wired (25 Aug) — [A1](#a1), [A2](#a2),
+  [A8](#a8), [B3](#b3).
+
+**What this changes strategically:** the oracle problem is solved, and solved better than planned — a
+golden ISA model in Python instead of a single-cycle core in Verilog, so there is no second RTL
+implementation to write or keep in sync. Adding a test is now *write a `.s`, add a `Settings(...)`*.
+The critical path was backing memory → IO slaves → `crt0.S` → C; **as of 28 Aug the first of those is
+done and the path is IO slave → `crt0.S` → C.** The binding constraint is hours, not unknowns.
 
 ---
 
@@ -52,10 +84,10 @@ Strict do-order for the critical path. Everything in the tracks below hangs off 
 | # | Task | | Est | Why here |
 |---|---|---|---|---|
 | 1 | [Three scope decisions](#zero--decide-these-in-the-first-hour) | `★☆☆ P0` | 30 m | Every hour after this is spent on the wrong thing if you get the DRAM one wrong |
-| 2 | [Assembly regression suite green](#a5) | `★★☆ P0` | 2 h | Your oracle. Debugging C on an unverified core is the classic way to lose a day |
-| 3 | [Backing memory + `SIM_EXIT`](#b1) | `★★☆ P0` | 1.5 h | Turns every program into a self-checking test. Build before any C |
+| 2 | [Assembly regression suite green](#a5) | `★★☆ P0` | ~~2 h~~ **1 h left** | Your oracle. **Harness done 27 Aug and `r_type` green** — what remains is writing the programs |
+| 3 | [Backing memory](#b1) ✅ + [`SIM_EXIT`](#b2) | `★★☆ P0` | ~~1.5 h~~ **0.5 h left** | ✅ **Memories done 28 Aug.** `SIM_EXIT` still turns every program into a self-checking test |
 | 4 | [The IO slave block](#b3) | `★★☆ P0` | 1.5 h | The bypass is built; nothing answers on the other end of it yet |
-| 5 | [Toolchain + `crt0.S` + linker script](#c1) | `★★☆ P0 🔥` | 2 h | Long pole with no RTL content — start it in the background early |
+| 5 | [`crt0.S` + linker script](#c2) | `★★☆ P0` | 1.5 h | ✅ **Toolchain done 27 Aug** ([C1](#c1)) — the 🔥 came off this row |
 | 6 | [`fib_iter.c` → `factorial.c` → `fib_rec.c`](#c3) | `★★☆ P0` | 2 h | The headline deliverable. Everything below this line is *more*, not *instead* |
 | 7 | [CSR file + Zicsr](#d1) | `★★☆ P1` | 2 h | Prerequisite for traps, interrupts, and the `mcycle` measurement |
 | 8 | [Trap controller (exceptions)](#d3) | `★★★ P1 🔥` | 3 h | A second control-flow override racing the branch flush |
@@ -187,11 +219,23 @@ hazard unit, and connecting the two.
   access silently. Cheap now, and it is the input `exception_detector.v` needs in [D3](#d3).
 
 <a name="a5"></a>
-- [ ] `★★☆ P0` **Get the assembly regression suite green, unpadded.** One command, run after every
-  change. All seven Day-1 programs plus `hazard.S`: back-to-back dependent ALU ops, load-use,
-  branch on a just-computed value, store of a just-loaded value, and a **distance-3 dependency**
-  (that last one exercises the negedge write-first register file, which forwarding does not cover).
-  This suite is your oracle for the rest of the week — every later failure gets bisected against it.
+- [~] `★★☆ P0` **Get the assembly regression suite green, unpadded.** — **harness done 27 Aug,
+  coverage outstanding.** `tb/cocotb/datapath` compares retired PC + all 32 registers against a golden
+  ISA model per instruction, so a failure names the exact instruction rather than just the program.
+  Adding a case is: write `asm/x.s`, add a `Settings(...)`, run. **End every program with `ebreak`** —
+  that is what tells the golden to stop.
+
+  - ✅ `r_type.s` — R-type + immediate arithmetic, back-to-back dependencies
+  - 🚧 `b_type.s` — created, empty
+  - ❌ still to write: shifts, `jal`/`jalr`, `lui`/`auipc`, loads/stores, and `hazard.s` — back-to-back
+    dependent ALU ops, load-use, branch on a just-computed value, store of a just-loaded value, and a
+    **distance-3 dependency** (that last one exercises the negedge write-first register file, which
+    forwarding does not cover).
+
+  **⚠ Unblocked 28 Aug.** [B1](#b1) is done, so `ldst.s` can now be written and run — it is the first
+  program that exercises the LSU stall path, the cache miss path and `data_mem` end to end through the
+  pipeline, rather than through `tb_dmem.v` in isolation. Note `data_mem` has no `$readmemh` yet, so a
+  load reads whatever the TB wrote into the array; the cocotb harness zeroes it.
 
 <a name="a6"></a>
 - [ ] `★★☆ P1` **Static prediction first, dynamic second.** Tie `branch_prediction = 0`, resolve in
@@ -209,12 +253,23 @@ hazard unit, and connecting the two.
 ## Track B — memory plumbing and MMIO (P0)
 
 <a name="b1"></a>
-- [ ] `★★☆ P0` **Fill `rtl/inst_mem.v` and `rtl/data_mem.v`.** Both are literally 0 bytes. They are
-  the backing store behind the cache, not a thing the cache replaces: `l1.v`'s memory port is
-  block-wide with a `mem_ready`/`mem_data_in_valid` handshake and something has to answer it.
-  `tb/tb_ctrl.v` already has a model to borrow. Give the model a **parameterised latency** — hold
-  `mem_ready` low for N cycles — so the stall path is exercised from the first bring-up rather than
-  the first time it hits real DRAM.
+- [x] ~~`★★☆ P0` **Fill `rtl/inst_mem.v` and `rtl/data_mem.v`.**~~ — **done 28 Aug**, and both are
+  instantiated inside `data_path` rather than brought out to its boundary. Three things worth carrying
+  forward:
+
+  - **Fetch needed no stall and no second LSU.** A *fixed* latency is fixed by retiming: address the
+    ROM with `if_pc_next` and its output register sits in parallel with the PC register instead of in
+    series behind it. A stall is only required for *variable* latency, i.e. an I-cache ([E6](#e6),
+    already `P2` and cut #3).
+  - **`data_mem` is word-wide with a burst counter**, not block-wide and not byte-addressed. The
+    counter *is* the parameterised latency this item asked for — realistic delay falls out of the
+    structure instead of being injected — and it is the shape [E4](#e4)'s Avalon adapter needs.
+  - **`mem_ready` is an accept signal, not a status flag.** `cache_controller` drops
+    `mem_addr_in_valid` the cycle it sees it, so a burst driven off the input valids freezes on word
+    two and hangs the core on the first miss. Caught by mutation testing, not by reading the code.
+
+  Covered by `tb/tb_dmem.v`. **`data_mem` still has no `$readmemh`** — needed before [C3](#c3)'s
+  `sum.c` rung, which is the first program with initialised globals.
 
 <a name="b2"></a>
 - [ ] `★☆☆ P0` **Build `SIM_EXIT` before anything else in this track.** A store to `0xF000_00FC`
@@ -262,12 +317,14 @@ hazard unit, and connecting the two.
 
 ## Track C — run C (P0)
 
-The headline deliverable. Start [C1](#c1) early and in the background — it's a download, not a
-thinking task, and it's the one item that can stall on something outside your control.
+The headline deliverable. **[C1](#c1) is done** — the track now starts at [C2](#c2), and the
+remaining risk is `crt0.S`/linker-script detail rather than anything outside your control.
 
 <a name="c1"></a>
-- [ ] `★★☆ P0 🔥` **RISC-V toolchain.** `riscv64-unknown-elf-gcc` with `-march=rv32i -mabi=ilp32`,
-  or your distro's `gcc-riscv64-unknown-elf`. Verify with `-print-libgcc-file-name` that a **rv32i**
+- [x] ~~`★★☆ P0 🔥` **RISC-V toolchain.**~~ — **done 27 Aug.** `binutils-riscv64-unknown-elf` +
+  `gcc-riscv64-unknown-elf` at `/usr/bin/riscv64-unknown-elf-*`. `as` and `objcopy` are exercised on
+  every datapath TB run, so the assembler half is proven rather than assumed. **The compiler half is
+  not yet** — before [C2](#c2), verify with `-print-libgcc-file-name` that a **rv32i**
   libgcc multilib actually exists — with plain `-march=rv32i`, GCC emits calls to `__mulsi3`,
   `__divsi3`, `__udivsi3` and `__modsi3` for `*`, `/`, `%`, and a missing multilib is the classic
   first surprise here. Hardware M is an optimisation, not a requirement.
@@ -524,6 +581,10 @@ probe with ~1130 ports. Getting from that to a real design on a board is its own
 
 ## Triage — what to cut, and in what order
 
+> **27 Aug: this is now the plan, not the contingency.** With ~12–16 h left, cuts 1–6 below are all
+> already made by arithmetic. What survives is **A + B + C**, plus [D1](#d1) if there is slack. The
+> list is kept in full because the cut *order* is still the right one if the deadline moves.
+
 Protect the working core above everything. Cut from the bottom:
 
 1. **HPS DDR3** ([E7](#e7)) → FPGA-side SDRAM. Already the recommendation, not really a cut.
@@ -554,20 +615,34 @@ project. Everything else is adjectives.
 | F — FPGA bring-up | 12 h | 52.5 h |
 | G — measurement | 7 h | 59.5 h |
 
-Against **~32–36 hours** available — the LSU banked about 3.5 h of that. So the honest read:
-**A + B + C + D lands right at the limit**, and that is already a pipelined RV32I core with
-interrupts, MMIO and compiled C — everything in the goal statement except the board and the DRAM.
+**Revised 27 Aug.** Banked so far: the LSU + hazard unit (~3.5 h), the toolchain ([C1](#c1)), and the
+test harness — which was budgeted inside [A5](#a5) but delivered something better than budgeted, since
+a golden ISA model removes the single-cycle-core oracle from the plan entirely.
 
-Two ways to spend the remaining budget, and they are mutually exclusive by Friday:
+Against **~12–16 hours** now available, not 32–36. That does not reach A + B + C + D. The arithmetic
+only closes on **A + B + C**:
 
-- **The memory system** (E): cache in front of external DRAM, in simulation, with the numbers from
-  [G3](#g3). Debuggable, low-variance, and it's the half that isn't in the paper.
-- **The board** (F): the core on real silicon with a UART and blinking LEDs. Higher variance —
-  pin assignments and timing closure are exactly the tasks that turn into a lost day — but it is
-  the thing you can put in front of a person.
+| | Track | Remaining | Cumulative |
+|---|---|---|---|
+| ✅ | harness + toolchain + **both memories (28 Aug)** | — | — |
+| | A — remaining `.s` programs + static prediction | ~3 h | 3 h |
+| | B — IO slave + `SIM_EXIT` | ~1.5 h | 4.5 h |
+| | C — `crt0.S`, linker script, the C ladder | ~5 h | 9.5 h |
+| | **everything else (D, E, F, G)** | **~48 h** | — |
 
-**Pick one on Wednesday night, when you know how Track A actually went.** Trying for both is how you
-get a half-finished DRAM controller *and* a design that doesn't fit, on Friday afternoon, with
-nothing to show. If Track A is green by Wednesday evening, take F — a working board demo is worth
-more than a simulated cache. If Track A slipped, take E and keep everything in the simulator where
-you can still debug it.
+**Revised 28 Aug: ~9.5 h remaining against roughly a day.** B shrank because the memories are done
+and only the IO slave is left in it. That is tight but no longer implausible.
+
+**That is the whole realistic plan: finish A, B, C. Stop.** A 5-stage pipelined RV32I core running
+GCC-compiled C, verified instruction-by-instruction against a golden model, is a complete and
+honestly-describable result. It is also the top three items of the goal statement.
+
+The choice the document used to pose — memory system (E) *or* board (F) on Wednesday night — **is no
+longer live.** Neither fits in a day, and both are ranked below D, which also doesn't fit. Attempting
+either now costs C, which is the deliverable. Revisit them after the deadline, not before.
+
+**If A + B + C is green with hours to spare**, the highest-value next item is **[D1](#d1) CSR file +
+Zicsr alone** (~2 h, no trap controller): it gets `mcycle`/`minstret` working, which is what every
+measurement in Track G depends on, and it is the paper's own `RV32I43F` milestone. Do **not** start
+[D3](#d3) traps or [D5](#d5) interrupts on the last day — both are flagged 🔥 and both race the branch
+flush you already have working.

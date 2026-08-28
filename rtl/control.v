@@ -15,9 +15,10 @@ module control
   output reg [2:0] mem_to_reg, //000 ALU | 001 memory | 010 PC+4| 011 lui| 100 CSR
   output reg reg_write, 
   output reg csr_write 
-); 
+);
 
-
+  wire [4:0] _opcode = (op_code[1:0] != 2'b11) ? 5'b11111:op_code[6:2];
+  
   always@(*)
   begin 
     alu_src_1 = 2'd0; 
@@ -32,7 +33,7 @@ module control
     csr_write = 0; 
     
 
-    case(op_code[6:2])
+    case(_opcode)
      `R_TYPE: 
      begin
       reg_write = 1; 

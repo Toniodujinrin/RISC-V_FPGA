@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 module tb;
-  localparam BLOCK_BITS = 512;
+  localparam BLOCK_BITS = 256;  // 8 words
   reg clk = 0, reset = 1;
   reg write_read = 0, valid = 0;
   reg [31:0] addr = 0, data_in = 0;
@@ -11,7 +11,11 @@ module tb;
   wire [BLOCK_BITS-1:0] evicted_block;
   integer errors = 0;
 
-  cache dut(.clk(clk), .reset(reset), .write_read(write_read), .valid(valid),
+  cache #(.BLOCK_BITS(BLOCK_BITS), .WORD_OFF_BITS(3))
+  dut(.clk(clk), .reset(reset), .write_read(write_read), .valid(valid),
+    //size was added to cache on 23 Aug and never connected here, so every
+    //access silently took the word path and all the byte checks failed
+    .size(2'b00),
     .addr(addr), .data_in(data_in),
     .missed_valid_in(missed_valid_in), .missed_block_in(missed_block_in),
     .data_out(data_out), .output_valid(output_valid), .ready(ready),
@@ -84,7 +88,9 @@ module tb;
     chk(data_out, 32'h0000_00A0, "byte_index picks byte 3 of word 0");
 
     // 6. store to word 0 byte 1, data taken from the matching lane of data_in
-    do_req(1, 32'h0000_0041, 32'h0000_5500, {BLOCK_BITS{1'bx}});
+    //RISC-V SB takes the byte from rs2[7:0] regardless of the address. this
+    //stimulus predates that fix and still put the byte in the addressed lane
+    do_req(1, 32'h0000_0041, 32'h0000_0055, {BLOCK_BITS{1'bx}});
     do_req(0, 32'h0000_0041, 32'h0, {BLOCK_BITS{1'bx}});
     chk(data_out, 32'h0000_0055, "byte store merged, other bytes intact");
     do_req(0, 32'h0000_0043, 32'h0, {BLOCK_BITS{1'bx}});

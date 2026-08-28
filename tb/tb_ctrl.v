@@ -2,7 +2,7 @@
 // exercises the write back path: evictions must reach memory even when the
 // write back buffer fills up and forces a drain of the buffer.
 module tb_ctrl;
-  localparam BLOCK_BITS = 512;
+  localparam BLOCK_BITS = 256;  // 8 words
   localparam ADDR_BITS  = 32;
   localparam FIFO_DEPTH = 2;      // deliberately tiny so it can be filled
 
@@ -22,7 +22,7 @@ module tb_ctrl;
   integer errors = 0;
 
   cache_controller #(.ADDR_BITS(ADDR_BITS), .DATA_WIDTH(32),
-                     .BLOCK_BITS(BLOCK_BITS), .WB_FIFO_DEPTH(FIFO_DEPTH))
+                     .BLOCK_BITS(BLOCK_BITS), .WORD_OFF_BITS(3), .WB_FIFO_DEPTH(FIFO_DEPTH))
   dut (.clk(clk), .reset(reset),
     .cpu_data_in_valid(cpu_data_in_valid), .cpu_write_read(cpu_write_read),
     .cpu_data_in(cpu_data_in), .cpu_addr_in(cpu_addr_in), .cpu_size(2'b00),
