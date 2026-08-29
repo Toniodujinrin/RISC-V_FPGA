@@ -657,3 +657,14 @@ async def test_full_type(dut):
     )
     scoreboard, expected = await setup(dut, settings)
     await finish(dut, scoreboard, expected)
+
+
+@cocotb.test()
+async def test_hazards_type(dut):
+    settings = Settings(
+        asm_filename=os.path.join(ASM_DIR, "hazards.s"),
+        obj_filename=os.path.join(BUILD_DIR, "hazards.o"),
+        bin_filename=os.path.join(BUILD_DIR, "hazards.bin"),
+    )
+    scoreboard, expected = await setup(dut, settings)
+    await finish(dut, scoreboard, expected)

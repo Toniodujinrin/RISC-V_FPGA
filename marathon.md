@@ -96,9 +96,9 @@ Strict do-order for the critical path. Everything in the tracks below hangs off 
 | # | Task | | Est | Why here |
 |---|---|---|---|---|
 | 1 | [Three scope decisions](#zero--decide-these-in-the-first-hour) | `★☆☆ P0` | 30 m | Every hour after this is spent on the wrong thing if you get the DRAM one wrong |
-| 2 | [Assembly regression suite green](#a5) | `★★☆ P0` | ~~2 h~~ **1 h left** | Your oracle. **Harness done 27 Aug and `r_type` green** — what remains is writing the programs |
+| 2 | [Assembly regression suite green](#a5) | `★★☆ P0` | ~~2 h~~ **~0.5 h** | ✅ **5 programs green 29 Aug.** Only `hazard.s` (distance-3) left |
 | 3 | [Backing memory](#b1) ✅ + [`SIM_EXIT`](#b2) | `★★☆ P0` | ~~1.5 h~~ **0.5 h left** | ✅ **Memories done 28 Aug.** `SIM_EXIT` still turns every program into a self-checking test |
-| 4 | [The IO slave block](#b3) | `★★☆ P0` | 1.5 h | The bypass is built; nothing answers on the other end of it yet |
+| 4 | **[The IO slave block](#b3) + [`SIM_EXIT`](#b2)** | `★★☆ P0` | 2 h | **← NEXT.** The bypass is built; nothing answers, so any stray MMIO address hangs the core dead |
 | 5 | [`crt0.S` + linker script](#c2) | `★★☆ P0` | 1.5 h | ✅ **Toolchain done 27 Aug** ([C1](#c1)) — the 🔥 came off this row |
 | 6 | [`fib_iter.c` → `factorial.c` → `fib_rec.c`](#c3) | `★★☆ P0` | 2 h | The headline deliverable. Everything below this line is *more*, not *instead* |
 | 7 | [CSR file + Zicsr](#d1) | `★★☆ P1` | 2 h | Prerequisite for traps, interrupts, and the `mcycle` measurement |
@@ -291,28 +291,38 @@ hazard unit, and connecting the two.
   Adding a case is: write `asm/x.s`, add a `Settings(...)`, run. **End every program with `ebreak`** —
   that is what tells the golden to stop.
 
-  - ✅ `r_type.s` — R-type + immediate arithmetic, back-to-back dependencies
-  - 🚧 `b_type.s` — created, empty
-  - ❌ still to write: shifts, `jal`/`jalr`, `lui`/`auipc`, loads/stores, and `hazard.s` — back-to-back
-    dependent ALU ops, load-use, branch on a just-computed value, store of a just-loaded value, and a
-    **distance-3 dependency** (that last one exercises the negedge write-first register file, which
-    forwarding does not cover).
+  **Five programs green as of 29 Aug**, all self-checking against the golden model:
 
-  **⚠ Unblocked 28 Aug.** [B1](#b1) is done, so `ldst.s` can now be written and run — it is the first
-  program that exercises the LSU stall path, the cache miss path and `data_mem` end to end through the
-  pipeline, rather than through `tb_dmem.v` in isolation. Note `data_mem` has no `$readmemh` yet, so a
-  load reads whatever the TB wrote into the array; the cocotb harness zeroes it.
+  - ✅ `r_type.s` — R and I arithmetic, back-to-back dependencies
+  - ✅ `b_type.s` — every branch, taken and not, plus `jal`/`jalr` and two loops
+  - ✅ `loop.s` — 100 iterations; also asserts the mispredict rate, see [A7](#a7)
+  - ✅ `sl_type.s` / `sl_2_type.s` — every load/store width and offset, signed and unsigned
+  - ✅ `full_type.s` — mixed, including `lui`/`auipc` and a distance-2 dependency across a cache stall
+
+  **These found four real bugs the shorter tests could not**, all at the memory-stall boundary and none
+  reachable before [B1](#b1) existed: stale load writeback, forwarding lost across a stall, the
+  prediction skew, and a zeroed instruction word decoding as a load. Mutation-tested — `loop.s` and
+  `full_type.s` are each the *only* program that catches their respective bug.
+
+  **Still worth adding: `hazard.s` with a distance-3 dependency.** Nothing in the suite exercises the
+  negedge write-first register file, which forwarding does not cover. It is the one gap left in A5.
 
 <a name="a6"></a>
-- [ ] `★★☆ P1` **Static prediction first, dynamic second.** Tie `branch_prediction = 0`, resolve in
-  EX, flush on miss. Get the pipeline *correct* before making it *fast*. The BTB and gshare
-  predictor are both already written and lint-clean, so switching over later is a one-signal change.
+- [x] ~~`★★☆ P1` **Static prediction first, dynamic second.**~~ — **moot 29 Aug.** The dynamic
+  predictor works, so there is no reason to fall back to static. Note the advice was sound and the
+  reason it was: the gshare path turned out to be a **correctness** bug, not a CPI one, and the
+  pipeline was only provably correct while the predictor was (accidentally) inert.
 
 <a name="a7"></a>
-- [ ] `★★☆ P2` **Wire the BTB + gshare in and prove they work.** Not correctness — CPI only. Two
-  assertions that matter: a 100-iteration loop mispredicts ~2 times not ~100 (it *predicts*), and a
-  consistently-taken branch drives its counter to `2'b11` (it *trains*). A predictor that never
-  learns still gives correct results, so only the second test can tell you it's alive.
+- [x] ~~`★★☆ P2` **Wire the BTB + gshare in and prove they work.**~~ — **done 29 Aug.** They were
+  instantiated since 24 Aug but predicted taken *zero* times: the PHT read was registered while the BTB
+  target was combinational, so `bp_taken` described the previous pc. `loop.s` now asserts the mispredict
+  rate (**10/100**, was 100%). CPI on that loop ~1.10, was ~1.99.
+
+  **"Not correctness — CPI only" was wrong**, and worth remembering: the skew redirected the pc for a
+  non-branch, which reaches EX with `branch = 0`, so nothing flushed and there was no recovery. Both
+  passing tests were blind to it. That is exactly the failure
+  [B3](../ROADMAP.md#b3--branch_predictorv) predicted in the roadmap.
 
 ---
 
