@@ -14,7 +14,7 @@ module lsu //load store unit
   input [FUNCT_3_WIDTH-1:0] em_funct_3, 
   input [DATA_WIDTH-1:0] em_r_data_2, 
   input [DATA_WIDTH-1:0] em_alu_result, 
-  output reg [DATA_WIDTH-1:0] be_cache_in, 
+  output [DATA_WIDTH-1:0] be_cache_in, 
   
 
   //cache port 
@@ -66,6 +66,15 @@ module lsu //load store unit
 
   wire cache_responded; 
   assign cache_responded = (current_state == RESP_WAITING) && resp_valid; 
+
+  //req_stall drops combinationally on cache_responded, so MEM/WB latches at the
+  //end of the response cycle. a registered be_cache_in is still holding the
+  //previous value at that point, so the load would write back stale data -- the
+  //pipeline released one cycle before the data it waited for was observable.
+  //bypass the register on the response cycle; resp_data_r only has to hold the
+  //value for DONE, when MEM could not advance yet.
+  reg [DATA_WIDTH-1:0] resp_data_r; 
+  assign be_cache_in = cache_responded? resp_data : resp_data_r; 
   assign req_stall = (em_mem_read | em_mem_write)
                       && ~cache_responded && ~(current_state == DONE); 
 
@@ -87,7 +96,7 @@ module lsu //load store unit
       io_size <= 0; 
       io_addr_in <= 0; 
       io_access_r <= 0; 
-      be_cache_in <= 0; 
+      resp_data_r <= 0; 
     end
     else 
     begin 
@@ -123,7 +132,7 @@ module lsu //load store unit
             cpu_data_in_valid <= 0; 
           if(resp_valid)
           begin 
-            be_cache_in <= resp_data; 
+            resp_data_r <= resp_data; 
             current_state <= mem_advance? IDLE : DONE; 
           end 
         end

@@ -11,13 +11,17 @@ supposed to happen on.
 > `fib_rec`, `factorial`, and everything the paper's final `RV32I46F_5SP` + SoC can do, up to and
 > including Dhrystone.
 
-**Deadline: Friday 28 Aug 2026. Today is Thu 27 Aug — one working day left.** That is **this evening
-+ Friday ≈ 12–16 working hours**, against a backlog below that totals ~60 h. The original plan assumed
-32–36 h; two days have gone. **[Triage](#triage--what-to-cut-and-in-what-order) is no longer a
-contingency — it is the plan.** Read it and [Time budget](#time-budget-vs-reality) before you touch
-anything else.
+**Deadline moved to Sunday 30 Aug 2026 (was Friday 28th). Today is Fri 28 Aug.** That is **this
+evening + Sat + Sun ≈ 23–25 working hours**, against a remaining backlog of ~57 h.
 
-**Progress, 28 Aug — deadline day.** [B1](#b1) is closed, which was the item blocking both [A5](#a5)
+**What the two extra days buy: exactly one more track.** A + B + C was the whole plan at 12–16 h; at
+~24 h it is A + B + C **plus one of** [Track D](#track-d--csrs-traps-interrupts-p1) (CSRs, traps,
+interrupts — paper parity, low variance, all in simulation) **or** [Track F](#track-f--fpga-bring-up-on-the-cyclone-v-p1)
+(the board — higher variance, but it is the thing you can put in front of a person, and the direction
+your MCU end goal actually runs in). They are ~11 h and ~12 h; **neither fits alongside the other, and
+Track E still does not fit at all.** See [Time budget](#time-budget-vs-reality) for the decision point.
+
+**Progress, 28 Aug.** [B1](#b1) is closed, which was the item blocking both [A5](#a5)
 and Track C:
 
 - ✅ **Both memories written and instantiated inside `data_path`.** `inst_mem.v` is a synchronous ROM
@@ -31,6 +35,14 @@ and Track C:
   and a burst that advances on the input valids freezes on its second word.
 - ✅ **The datapath regression is green again** after both memories went internal (`r_type.s`,
   6 retired, 0 errors) — it now drives the real ROM rather than a bus model.
+- ✅ **Illegal-encoding guard in `control.v`.** `case(op_code[6:2])` threw away bits `[1:0]`, so
+  `32'd0` aliased onto `` `I_TYPE_3 `` (LOAD) and issued a cache request that never completed. That was
+  a **hardware** hang, not a sim artifact: Quartus zero-fills unwritten block RAM, so a pc running past
+  the program would have hung the core on the board with no diagnostic. Now
+  `op_code[1:0] != 2'b11 -> 5'b11111`, which falls through to `default` with every control bit low.
+  See [Fetching past the end of the program](#fetching-past-the-end-of-the-program-28-aug).
+- ✅ **`data_mem` zeroes its array from `initial`**, same discipline as `register_file` — no reset port
+  on a 1024x32 array, and it matches what Quartus leaves unwritten block RAM as.
 
 **What is left is now a short list:** the IO slave ([B2](#b2)/[B3](#b3)), `crt0.S` ([C2](#c2)), and
 the C ladder ([C3](#c3)). Everything on the critical path below that line is written and tested.
@@ -128,6 +140,60 @@ Three decisions, each of which changes what you build. Make them now, write the 
   a CLINT-style `mtime`/`mtimecmp` pair, and one level-sensitive external line ORed off the
   buttons. Skip software interrupts (`MSIP`) and skip a real PLIC — a single OR gate driving
   `MEIP` is enough to demonstrate the mechanism and costs 20 lines instead of 400.
+
+---
+
+## Fetching past the end of the program (28 Aug)
+
+Worth writing down because the answer is a design principle, not a workaround, and because it decides
+how the flashing story works later.
+
+**Do not pad instruction memory with NOPs.** That was a testbench crutch, and it does not survive
+contact with a compiler, real flash, or DDR. Three mechanisms replace it, in order of when they act:
+
+1. **A correct program never runs off the end.** `crt0.S` ends in an infinite loop
+   (`1: j 1b`, or `wfi`), so falling through is a fault path, not a state to design memory contents
+   around. ARM's default `Reset_Handler` ends in `B .` for the same reason.
+2. **The ISA reserves the escape hatch.** The RISC-V unprivileged spec defines the all-zero *and*
+   all-ones instruction words as illegal **specifically to catch jumps into zeroed RAM or erased
+   flash** — erased NOR flash reads `0xFFFF_FFFF`, zeroed RAM reads `0x0000_0000`. This core did not
+   honour that: `control.v` cased on `op_code[6:2]` alone, so `32'd0` decoded as a LOAD. Fixed 28 Aug
+   by requiring `op_code[1:0] == 2'b11`, which every 32-bit RISC-V instruction has.
+3. **Then it becomes a trap.** [D3](#d3)'s `exception_detector` turns that same condition into an
+   illegal-instruction exception with `mcause = 2` — the equivalent of a Cortex-M HardFault.
+
+**The build flow is the standard one; do not write a custom assembler.** The tool that decides where
+`.text`, `.data` and the stack live is the **linker script**, and it already exists:
+
+```
+gcc -march=rv32i -mabi=ilp32 -T link.ld -nostdlib crt0.S main.c -lgcc -o fw.elf
+objcopy -O verilog fw.elf fw.mem     # $readmemh / simulation
+objcopy -O ihex    fw.elf fw.hex     # or .mif for Quartus memory init
+```
+
+The `.mif`/`.hex` initialises block RAM at FPGA configuration time, which is the direct analogue of
+programming STM32 flash: defined contents, no padding logic anywhere in the design.
+
+### Where this is heading (the STM32-alike)
+
+The end goal is a small MCU with a custom HAL, flasher and debugger. The pieces map onto standards
+that already exist, which is the point — none of this needs inventing:
+
+| STM32 | here |
+|---|---|
+| internal flash @ `0x0800_0000` | external SPI flash, or block RAM initialised from `.mif` |
+| SRAM @ `0x2000_0000` | `data_mem` behind the L1 |
+| peripherals @ `0x4000_0000` | the MMIO page at `0xF000_0000`, already cache-bypassed in `lsu.v` |
+| vector table at flash base | RISC-V uses a reset vector plus `mtvec` for traps — simpler |
+| SWD debug port | **RISC-V Debug Module over JTAG** (the official debug spec) |
+| HAL | structs over the MMIO map |
+
+Two things that make the debugger cheaper than it looks: the RISC-V Debug Specification's JTAG DTM is
+what OpenOCD and GDB already speak, so the host side is off the shelf; and the FPGA already has a JTAG
+port to reuse. [F7](#f7)'s clock-enable single-step is a stepping stone to the same place.
+
+**None of this is deadline work** — items 1 and 3 are [C2](#c2) and [D3](#d3), the debugger is post-F.
+Only the `control.v` guard was urgent, because it was a live hardware hang.
 
 ---
 
@@ -581,9 +647,13 @@ probe with ~1130 ports. Getting from that to a real design on a board is its own
 
 ## Triage — what to cut, and in what order
 
-> **27 Aug: this is now the plan, not the contingency.** With ~12–16 h left, cuts 1–6 below are all
-> already made by arithmetic. What survives is **A + B + C**, plus [D1](#d1) if there is slack. The
-> list is kept in full because the cut *order* is still the right one if the deadline moves.
+> **Updated 28 Aug for the Sunday deadline.** At ~24 h, cuts 1–4 (HPS DDR3, all of Track G, the
+> I-cache, external DRAM) are still forced by arithmetic. Cuts 5–8 are **no longer all forced**: there
+> is room for A + B + C plus *one* of Track D or Track F.
+>
+> Note this list ranks **the board (8) above traps (6) and interrupts (5)** — i.e. by your own stated
+> priorities, if only one of D or F survives it should be **F**. That is a real ordering choice, not an
+> oversight, so it is worth re-confirming rather than drifting into D because it is the safer work.
 
 Protect the working core above everything. Cut from the bottom:
 
@@ -615,34 +685,47 @@ project. Everything else is adjectives.
 | F — FPGA bring-up | 12 h | 52.5 h |
 | G — measurement | 7 h | 59.5 h |
 
-**Revised 27 Aug.** Banked so far: the LSU + hazard unit (~3.5 h), the toolchain ([C1](#c1)), and the
-test harness — which was budgeted inside [A5](#a5) but delivered something better than budgeted, since
-a golden ISA model removes the single-cycle-core oracle from the plan entirely.
-
-Against **~12–16 hours** now available, not 32–36. That does not reach A + B + C + D. The arithmetic
-only closes on **A + B + C**:
+**Revised 28 Aug for the Sunday deadline.** Banked so far: the LSU + hazard unit (~3.5 h), the
+toolchain ([C1](#c1)), the test harness — which delivered better than budgeted, since a golden ISA
+model removes the single-cycle-core oracle from the plan entirely — and **both memories** ([B1](#b1)).
 
 | | Track | Remaining | Cumulative |
 |---|---|---|---|
-| ✅ | harness + toolchain + **both memories (28 Aug)** | — | — |
+| ✅ | harness + toolchain + both memories | — | — |
 | | A — remaining `.s` programs + static prediction | ~3 h | 3 h |
 | | B — IO slave + `SIM_EXIT` | ~1.5 h | 4.5 h |
 | | C — `crt0.S`, linker script, the C ladder | ~5 h | 9.5 h |
-| | **everything else (D, E, F, G)** | **~48 h** | — |
+| | **— core deliverable complete here —** | | **9.5 h** |
+| | D — CSRs, traps, interrupts | ~11 h | 20.5 h |
+| | *or* F — FPGA bring-up | ~12 h | 21.5 h |
+| | E — external DRAM | ~12 h | ✗ does not fit |
+| | G — measurement | ~7 h | ✗ does not fit |
 
-**Revised 28 Aug: ~9.5 h remaining against roughly a day.** B shrank because the memories are done
-and only the IO slave is left in it. That is tight but no longer implausible.
+**A + B + C is ~9.5 h against ~24.** It should be green by Saturday midday, which is the first time in
+this project that the core deliverable has had real slack behind it. **Do not spend that slack on
+starting two things.**
 
-**That is the whole realistic plan: finish A, B, C. Stop.** A 5-stage pipelined RV32I core running
-GCC-compiled C, verified instruction-by-instruction against a golden model, is a complete and
-honestly-describable result. It is also the top three items of the goal statement.
+**Then one track, not two.** D and F are ~11 h and ~12 h; the remainder after A+B+C is ~14 h. Either
+fits alone. Neither fits with the other, and taking both is the failure mode the original plan warned
+about — a half-finished trap controller *and* a design that does not fit, on Sunday afternoon, with
+nothing new to show.
 
-The choice the document used to pose — memory system (E) *or* board (F) on Wednesday night — **is no
-longer live.** Neither fits in a day, and both are ranked below D, which also doesn't fit. Attempting
-either now costs C, which is the deliverable. Revisit them after the deadline, not before.
+- **Track D** — Zicsr, traps, interrupts. Paper parity (`RV32I46F_5SP`) plus interrupts, which the
+  paper does not have. Low variance: it is all simulation, and you have a golden model and a working
+  regression to catch it when it breaks. `mcycle`/`minstret` land with [D1](#d1), which makes the CPI
+  numbers in [G1](#g1) nearly free afterwards.
+- **Track F** — the board. Higher variance: the QSF has **zero** pin assignments today, and pin/PLL/
+  timing-closure work is exactly the kind that eats a day. But it is the only track that produces
+  something a person can watch run, and it is the direction the MCU end goal
+  ([Fetching past the end](#fetching-past-the-end-of-the-program-28-aug)) actually runs in.
 
-**If A + B + C is green with hours to spare**, the highest-value next item is **[D1](#d1) CSR file +
-Zicsr alone** (~2 h, no trap controller): it gets `mcycle`/`minstret` working, which is what every
-measurement in Track G depends on, and it is the paper's own `RV32I43F` milestone. Do **not** start
-[D3](#d3) traps or [D5](#d5) interrupts on the last day — both are flagged 🔥 and both race the branch
-flush you already have working.
+**[Triage](#triage--what-to-cut-and-in-what-order) ranks the board above traps and interrupts**, so on
+the document's own stated priorities the answer is F. Two things that argue the other way and are worth
+weighing rather than ignoring: a timer interrupt is foundational for any HAL, so D is not a detour from
+the MCU goal either; and F's variance is concentrated in tasks with no fallback — if the fitter fights
+you on Sunday there is no partial credit, whereas D degrades gracefully (CSR file alone is still the
+paper's `RV32I43F` milestone).
+
+**Decide Saturday evening, when A + B + C is actually green** — not now, and not on Sunday morning when
+the choice has already been made for you by the clock. If A + B + C slips past Saturday evening, take
+**[D1](#d1) alone** (~2 h, CSR file, no trap controller) and stop there.

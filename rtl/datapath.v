@@ -279,7 +279,8 @@ module data_path
   )
   REG_FILE
   (
-    .clk(clk), 
+    .clk(clk),
+    .n_reset(~reset), 
     .write_en(wb_reg_write), 
     .read_addr_1(id_rs1), 
     .read_addr_2(id_rs2), 
@@ -346,6 +347,8 @@ module data_path
     .prediction_index(id_prediction_index), 
     .bhr_snap_index(id_bhr_snap_index), 
     .prediction_valid(id_prediction_valid), 
+    .fwd_rd_1(rd_1_fwd), 
+    .fwd_rd_2(rd_2_fwd), 
     .flush(id_ex_flush), 
     .stall(id_ex_stall), 
     .ex_jump(ex_jump), 
@@ -730,6 +733,13 @@ module data_path
       3'd4:    wb_src = wb_csr_rd; 
       default: wb_src = wb_alu_result; 
     endcase
+  end
+
+
+  initial
+  begin
+    $dumpfile("datapath.vcd"); 
+    $dumpvars(0,data_path); 
   end
 
 endmodule 

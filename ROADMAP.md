@@ -3,7 +3,9 @@
 Reproducing **RV32I46F_5SP** from *BASIC_RV32s: An Open-Source Microarchitectural Roadmap for RISC-V RV32I* (Kang & Choi, ISOCC 2025) — `2510.15887v1.pdf`.
 
 - **Start:** Sat 22 Aug 2026
-- **Target:** Sun 23 Aug (core done) → **hard deadline Tue 25 Aug**
+- **Target:** Sun 23 Aug (core done) → ~~hard deadline Tue 25 Aug~~ → **deadline now Sun 30 Aug**
+  (moved from Fri 28th). The day-by-day structure below is kept as the record of how the work was
+  sequenced; the live schedule is [marathon § Time budget](marathon.md#time-budget-vs-reality).
 - **Toolchain present:** `iverilog`, `verilator`, `gtkwave`, `cocotb` 2.0.1 (in `.venv`), **RISC-V binutils/GCC (27 Aug)**
 - **Toolchain missing:** FPGA vendor tools only — see [Day 0](#day-0--saturday-morning-unblock-3-h)
 
@@ -39,10 +41,16 @@ So this plan commits to a **primary target** and treats the rest as sequenced st
 | **P0** | RV32I 5-stage pipelined core, forwarding + hazard unit, passing self-checking sim tests | **by Mon 24** |
 | **P0** | **GCC-compiled C running in sim** — toolchain + `crt0.S` + linker script + simple RAM, `fib.c` as the first target | **Mon 24** |
 | **P1** | Dynamic predictor wired in (CPI only, never correctness) | **Mon 24** |
-| **P1** | Zicsr + trap/exception handling (`RV32I43F` → `RV32I46F`) | **Tue 25** |
-| **P2** | `rtl/l1.v` wired in as the core's memory, core stalls on miss | **Tue 25** |
-| **S1** | FPGA synthesis + UART SoC on your board | after Tue |
-| **S2** | Dhrystone 2.1 + DMIPS/MHz measurement | after Tue |
+| **P1** | Zicsr + trap/exception handling (`RV32I43F` → `RV32I46F`) | ~~Tue 25~~ **Sun 30, or cut** |
+| **P2** | `rtl/l1.v` wired in as the core's memory, core stalls on miss | ✅ **done 28 Aug** |
+| **S1** | FPGA synthesis + UART SoC on your board | ~~after Tue~~ **Sun 30, or cut** |
+| **S2** | Dhrystone 2.1 + DMIPS/MHz measurement | cut — does not fit |
+
+> **Rescheduled 28 Aug for the Sunday deadline.** ~23–25 h remain against a ~57 h backlog, so the two
+> P1/S1 rows above are **mutually exclusive**: there is room for the core deliverable plus *one* of
+> Zicsr+traps or the board, not both. The choice, and the argument on each side, is in
+> [marathon § Time budget](marathon.md#time-budget-vs-reality) — decide it Saturday evening once the
+> `.s` suite and the C ladder are actually green.
 
 **What the goal change displaces.** Running C needs a correct pipeline, working `LW`/`SW`, a toolchain,
 and startup code. It does **not** need traps, CSRs, or the branch predictor — so Zicsr/traps drop behind
@@ -154,7 +162,7 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 | `rtl/alu.v` | 43 | ✅ | **Done 23 Aug** — `ADD_C` added, `` `PC `` retired, lints clean. See [B1](#b1--aluv) |
 | `rtl/alu_controller.v` | 67 | ✅ | **Done 23 Aug** — `JALR` → `` `ADD_C ``. See [B2](#b2--alu_controllerv) |
 | `rtl/branch_logic.v` | 35 | ✅ | **Done 23 Aug** — EX-stage resolve, lints clean, 5/5 directed cases |
-| `rtl/branch_predictor.v` | 125 | ✅ | **Done 23 Aug** — gshare, pure PHT+BHR. Target path removed (BTB owns it). Lints clean. See [B3](#b3--branch_predictorv) |
+| `rtl/branch_predictor.v` | 129 | ✅ | **Working 29 Aug.** Written 23 Aug but predicted taken *zero* times until the lookup was made combinational to match the BTB, and the PHT update gated on `predicted_valid`. The skew was a **correctness** bug, not just CPI: it redirected the pc for the wrong instruction. 100-iteration loop now mispredicts 10/100. See [B3](#b3--branch_predictorv) |
 | `rtl/btb.v` | 104 | ✅ | **Done 23 Aug** — fully-associative branch target buffer, 4 entries. See [D9](#d9-btb-structure-and-depth) |
 | `rtl/register_file.v` | 45 | ✅ | **Done 23 Aug** — 32 regs, `x0` hardwired, write-first. See [B4](#b4--register_filev) |
 | `rtl/forwarding_unit.v` | 43 | ✅ | **Done.** `forward_a`/`forward_b` only — the undriven `source_a`/`source_b` ports were dropped, the datapath owns the mux. Instantiated as `FORWARDING_UNIT` and exercised by the smoke test. See [B5](#b5--forwarding_unitv), [D12](#d12-what-gets-forwarded) |
@@ -166,9 +174,9 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 | `rtl/inst_mem.v` | 33 | ✅ | **Done 28 Aug** — synchronous ROM, `$readmemb` init, range-checked `output_valid`. Re-timed against the PC rather than stalled; see [Instruction fetch](#instruction-fetch-is-a-retimed-synchronous-rom-28-aug) |
 | `rtl/data_mem.v` | 104 | ✅ | **Done 28 Aug** — word-wide array, counter-driven block burst, latching FSM. Backs the cache. Verified with `tb/tb_dmem.v`; see [The backing memory](#the-backing-memory-28-aug) |
 | `rtl/hazard_detector.v` | 85 | ✅ | **Done 25 Aug** — pure combinational. `req_stall` outranks every redirect; exports `mem_advance` to the LSU. Wired into `datapath.v` |
-| `rtl/lsu.v` | 139 | ✅ | **Done 25 Aug** — owns the cache handshake: issue-once, valid held until accepted, combinational `req_stall`, `DONE` state, latched load data, MMIO bypass. Wired into `datapath.v`. See [The memory-stall handshake](#the-memory-stall-handshake) |
+| `rtl/lsu.v` | 147 | ✅ | **Done 25 Aug, load data fixed 29 Aug** — owns the cache handshake: issue-once, valid held until accepted, combinational `req_stall`, `DONE` state, MMIO bypass. The response is now bypassed around its register on the cycle the stall drops; before that every `lw` wrote back stale data. See [The memory-stall handshake](#the-memory-stall-handshake) |
 | `rtl/IF_ID_reg.v` | 74 | ✅ | **Done 23 Aug** — carries the full prediction payload; flush drops it. Verified in sim |
-| `rtl/ID_EX_reg.v` | 187 | ✅ | **Done 23 Aug** — full control/decode/datapath/prediction payload. Verified in sim. See [What belongs in a pipeline register](#what-belongs-in-a-pipeline-register) |
+| `rtl/ID_EX_reg.v` | 198 | ✅ | **Done 23 Aug, forwarding capture added 29 Aug** — full control/decode/datapath/prediction payload. Now re-captures the forwarded operands while stalled, or a distance-2 dependency across a memory stall reads a stale register. See [What belongs in a pipeline register](#what-belongs-in-a-pipeline-register), [D12](#d12-what-gets-forwarded) |
 | `rtl/EX_MEM_reg.v` | 124 | ✅ | **Done 23 Aug** — `em_` prefix. Completes all four pipeline registers; chain verified in sim |
 | `rtl/MEM_WB_reg.v` | 97 | ✅ | **Done 23 Aug** — module renamed `MEM_WB_reg` to match the file. All 5 writeback sources cross. `csr_write` still to add for Day 3 |
 | `rtl/BE_logic.v` | 22 | ✅ | **Done 24 Aug** — load sign-extension, the surviving half of the paper's `BE_Logic`. Verified with the cache end to end |
@@ -274,7 +282,11 @@ Start each day at the top and work down: the cheap items build momentum and, mor
 | Suite | State | Covers |
 |---|---|---|
 | `tb/cocotb/register_file` | ✅ 100 random, passing | read/write, `x0` hardwiring |
-| `tb/cocotb/datapath` | ✅ `r_type.s` passing | **whole-core, self-checking against a golden ISA model** — see [The datapath testbench](#the-datapath-testbench-27-aug) |
+| `tb/cocotb/datapath` | ✅ 5 programs passing | **whole-core, self-checking against a golden ISA model** — see [The datapath testbench](#the-datapath-testbench-27-aug) |
+| ↳ `r_type.s` · `b_type.s` | ✅ | R/I arithmetic and every branch, taken and not |
+| ↳ `loop.s` | ✅ | **predictor regression** — 100 iterations, asserts the mispredict rate. The only test that catches the prediction skew |
+| ↳ `sl_type.s` · `sl_2_type.s` | ✅ | every load/store width and offset, signed and unsigned |
+| ↳ `full_type.s` | ✅ | **the only test that catches forwarding loss across a memory stall** — needs a long cache stall *and* a distance-2 dependency across it |
 | `tb/tb_ctrl.v`, `tb/tb_l1.v` | ✅ directed | L1 write-back path, FIFO-full drain, sub-word access |
 | `tb/tb_dmem.v` | ✅ directed, **new 28 Aug** | `cache_controller` + `data_mem` together: refill, second refill, address wrap, dirty eviction reaching memory |
 | `tb/cocotb/instruction_decoder` | ❌ **to write** | every format's immediate, shift-imm `funct_7`, the LOAD/SYSTEM funct_3 collision |
@@ -333,6 +345,30 @@ assuming.
 
 ---
 
+### Fetching past the end of the program (28 Aug)
+
+**Do not pad instruction memory with NOPs.** That was a testbench crutch and does not survive a
+compiler, real flash, or DDR. Three mechanisms replace it:
+
+1. **A correct program never runs off the end** — `crt0.S` ends in `1: j 1b` or `wfi` ([C2] in
+   marathon). Falling through is a fault path, not a state to design memory contents around.
+2. **The ISA reserves the escape hatch.** RISC-V defines the all-zero *and* all-ones instruction words
+   as illegal **specifically to catch jumps into zeroed RAM or erased flash**. This core did not honour
+   that: `control.v` cased on `op_code[6:2]` alone, so `32'd0` decoded as a LOAD and issued a phantom
+   cache request. **That was a hardware hang, not a sim artifact** — Quartus zero-fills unwritten block
+   RAM. Fixed 28 Aug by requiring `op_code[1:0] == 2'b11`, which every 32-bit RISC-V instruction has;
+   anything else falls to `default` with all control bits low. Unit-tested across `0x00000000`,
+   `0xFFFFFFFF`, two other bad `[1:0]` patterns, and a real LOAD.
+3. **Then it becomes a trap** — [D3]'s `exception_detector`, `mcause = 2`.
+
+The build flow is the standard one and needs no custom assembler: the **linker script** decides where
+`.text`/`.data`/stack live, and `objcopy -O verilog` / `-O ihex` produces the memory image.
+`.mif`/`.hex` init of block RAM at configuration time is the direct analogue of programming STM32
+flash. Longer discussion, including the STM32/debugger mapping, in
+[marathon § Fetching past the end](marathon.md#fetching-past-the-end-of-the-program-28-aug).
+
+---
+
 ### The backing memory (28 Aug)
 
 `data_mem.v` answers the cache's block port. The decision that shaped it: **the array is 32 bits wide
@@ -368,8 +404,10 @@ latched state and an FSM, never off the input valids.
 Both are worth keeping — they make `data_mem` correct against any controller instead of depending on
 undocumented hold-and-align behaviour in this one — but neither is what fixed the hang.
 
-**Still open:** `data_mem` has no `$readmemh`, so the array powers up x. The cocotb TB zeroes it, but
-`.data` initialisation is needed before the `sum.c` rung of the [C ladder](#the-c-ladder).
+**Closed 28 Aug:** `data_mem` zeroes its array from an `initial` loop — same discipline as
+`register_file`, which keeps a reset port off a 1024x32 array and matches what Quartus leaves unwritten
+block RAM as. A real `.data` init path is still needed before the `sum.c` rung of the
+[C ladder](#the-c-ladder), but the x-propagation hazard is gone.
 
 ---
 
@@ -394,7 +432,9 @@ Four pieces, matching the `register_file` structure:
   **Superseded the `I_Mem_Model` bus model on 28 Aug**, when both memories moved inside `data_path` and
   there was no longer a port to drive. `inst_mem`'s own `$readmemb` runs at time 0, before the test
   body, so it cannot load a per-test program — the TB writes the `.mem` file anyway to keep the
-  synthesis path honest. Unused ROM locations are filled with `nop`, never left x and never zero.
+  synthesis path honest. Unused ROM locations are filled with **zero**, which `control.v` decodes as a
+  reserved illegal encoding as of 28 Aug — so sim and hardware agree instead of the testbench papering
+  over a hang (see [Fetching past the end](#fetching-past-the-end-of-the-program-28-aug)).
 - **`Monitor`** samples at `wb_instr_valid`, records `wb_pc`, then waits for the falling edge (the
   register file's write edge) before snapshotting all 32 registers.
 - **`Scoreboard`** compares both queues and prints a per-register diff on mismatch.
@@ -405,11 +445,12 @@ the length guard, but every test from here should end with `ebreak` so the two e
 
 **Five things this cost to get right** — the last three are core-facing and will bite again:
 
-- **A zero instruction word is not a safe filler.** `op_code[6:2]` of `32'd0` is `` `I_TYPE_3 `` — the
-  *load* class. Fetching past the end of the program therefore issues a cache request that the tied-off
-  backing memory never answers, and the pipeline hangs with no obvious cause. `I_Mem_Model` returns
-  `0x00000013` (`addi x0,x0,0`) instead. **This is a real property of the core, not a TB artifact** —
-  it will matter again the moment fetch goes through `l1.v` and a miss returns zeros.
+- **A zero instruction word was not a safe filler.** `op_code[6:2]` of `32'd0` is `` `I_TYPE_3 `` — the
+  *load* class — so fetching past the end of the program issued a cache request that the backing
+  memory never answered, and the pipeline hung with no obvious cause. **Fixed properly in the RTL on
+  28 Aug** rather than padded around: `control.v` now requires `op_code[1:0] == 2'b11`, so the
+  spec-reserved all-zero word is inert. See
+  [Fetching past the end](#fetching-past-the-end-of-the-program-28-aug).
 - **Every model must be running before reset drops.** The PC is held at 0 through reset, so those reset
   cycles are exactly when the imem model has to be driving `program[0]`. Building it after
   `reset_dut()` meant the first post-reset edge latched a stale `imem_data` and **silently ate the
@@ -576,6 +617,15 @@ from the cache's port list:
   what the LSU uses.
 - **`req_stall` must be combinational.** A registered stall reports the previous cycle, by which point
   the instruction it was protecting has already left MEM.
+  - **⚠ Amended 29 Aug — that is true of *asserting*, and as originally written this bullet argued for
+    the code that broke every load.** Deassertion has the opposite requirement: **the stall must not
+    drop until the captured response is observable.** `cache_responded` is combinational, so
+    `req_stall` fell in the same cycle the cache answered — but `be_cache_in <= resp_data` is
+    non-blocking, so during that cycle it still held the *previous* value. MEM/WB latched at the end of
+    it and every `lw` wrote back stale data. Fixed by bypassing the register on the response cycle
+    (`be_cache_in = cache_responded ? resp_data : resp_data_r`), which costs no cycles; `resp_data_r`
+    only has to hold the value for `DONE`. The general rule: **release the stall on the cycle the data
+    is visible, not the cycle it is captured.**
 - **A `DONE` state** for a response that arrives while something else is holding MEM — otherwise the
   access re-issues. Entered only when `mem_advance` is low on the response cycle.
 
@@ -1067,6 +1117,35 @@ address instead of the data.
 `datapath.v` resolves this once per stage as `em_src` and `wb_src`, keyed off `mem_to_reg`, and
 forwards those. That reuses the writeback mux instead of duplicating source selection inside the
 forwarding unit.
+
+**A forwarding source that gets bubbled must be captured, not re-derived — added 29 Aug.** This is the
+second half of the rule above and it only bites once a memory access takes more than one cycle, so it
+stayed hidden until `data_mem` landed.
+
+A memory stall asserts `mem_wb_flush` (see [The memory-stall handshake](#the-memory-stall-handshake)),
+deliberately, so WB does not re-commit. The consequence is that **a producer sitting in writeback is a
+forwarding source for exactly one cycle**, while the consumer parked in EX re-derives its operand
+combinationally on *every* cycle of the stall. The correct value is computed once and then thrown away:
+
+```
+addi x1, x0, 256     writes x1
+sw   x24, 12(x1)     distance 1 -- forwards from EX/MEM, which is *stalled* (held), so it survives
+lh   x2,  12(x1)     distance 2 -- needs MEM/WB, which is *flushed* after one cycle
+```
+
+The `lh` computed the right address on the first stall cycle, then fell back to the stale `ex_rd_1` it
+read in ID for the remaining ~19, and EX/MEM latched the wrong one. It addressed `0x4098` instead of
+`0x010c` — a silently wrong load, not a hang.
+
+**Fix:** `ID_EX_reg` re-captures the forwarded operands while stalled —
+`ex_rd_1 <= fwd_rd_1; ex_rd_2 <= fwd_rd_2;` — fed from the datapath's existing forwarding muxes. It is
+a no-op when no forward is active, since the mux then selects `ex_rd_1` itself, so it captures exactly
+on the cycle the value is available and holds it afterwards. No extra cycles, and the bubble semantics
+that `mem_wb_flush` exists for are unchanged.
+
+**Only `full_type.s` catches this.** Mutation-tested: with the capture disabled, `r_type`, `loop`,
+`b_type` and `sl_type` all still pass. It needs a long cache stall *and* a distance-2 dependency across
+it, which no shorter program in the suite combines.
 
 **Not yet covered:** CSR read-after-write forwarding (the paper's `CSR_FWsrc`, `csr_hazard_wb`,
 `csr_hazard_mem`). That compares CSR addresses, not register numbers — Day 3 work alongside Zicsr.

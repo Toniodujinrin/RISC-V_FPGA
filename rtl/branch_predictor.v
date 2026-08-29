@@ -18,15 +18,17 @@ module branch_predictor
   //prediction port
   input [DATA_WIDTH-1:0] pc_bits,
   input history_read,
-  output reg [1:0] prediction_out,
-  output reg [HIST_BITS-1:0] prediction_index,
-  output reg prediction_valid, 
+  output [1:0] prediction_out,
+  output [HIST_BITS-1:0] prediction_index,
+  output prediction_valid, 
   output reg [$clog2(BHR_SNAPS)-1:0] bhr_snap_index
 ); 
 
   localparam LOCATIONS = 1 << HIST_BITS; 
 
-  (*ramstyle = "block"*) reg [1:0] pht [0:LOCATIONS-1]; 
+  //logic, not block: an M10K has no combinational read port, and 128x2 bits does
+  //not justify one anyway
+  (*ramstyle = "logic"*) reg [1:0] pht [0:LOCATIONS-1]; 
   (*ramstyle = "logic"*) reg [HIST_BITS-1:0] bhr_snaps [0:BHR_SNAPS-1]; 
 
 
@@ -37,6 +39,18 @@ module branch_predictor
   reg [HIST_BITS-1:0] predicted_index_r;
   reg [1:0] predicted_in_r;
   reg history_write_r;
+  reg predicted_valid_r;
+
+  //btb_target is combinational off if_pc, so the prediction has to be too. a
+  //registered read lands a cycle later, by which point if_pc has moved on and
+  //bp_taken describes the wrong pc -- which is why nothing was ever predicted.
+  //qualified by history_read: on a btb miss there is no lookup and the pc is not
+  //redirected, so the payload carried down the pipeline must say not-taken. left
+  //ungated, a warm pht makes branch_logic believe a taken branch was correctly
+  //predicted when fetch never actually redirected, so it does not flush.
+  assign prediction_out   = history_read ? pht[current_index] : 2'b00;
+  assign prediction_index = current_index;
+  assign prediction_valid = history_read;
 
   
 
@@ -73,9 +87,7 @@ module branch_predictor
       predicted_index_r <= 0; 
       predicted_in_r <= 0; 
       history_write_r <= 0;
-      prediction_out <= 0; 
-      prediction_index <= 0; 
-      prediction_valid <= 0; 
+      predicted_valid_r <= 0; 
       actually_taken_r <= 0; 
     end
     else 
@@ -83,10 +95,15 @@ module branch_predictor
       predicted_index_r <= predicted_index; 
       predicted_in_r <= predicted_in; 
       history_write_r <= history_write; 
+      predicted_valid_r <= predicted_valid; 
       actually_taken_r <= actually_taken; 
       
 
-      if(history_write_r)
+      //only train an entry this branch was actually predicted with. ungated, a
+      //branch that missed the btb trains pht[0] with a prediction of 0 -- the same
+      //predict/update index mismatch as B3 defect 9. line 60 already guards the
+      //bhr path this way.
+      if(history_write_r && predicted_valid_r)
       begin 
         if(!actually_taken_r) //miss 
         begin 
@@ -97,15 +114,6 @@ module branch_predictor
            pht[predicted_index_r] <= (predicted_in_r == 2'd3) ? 2'd3:
             predicted_in_r + 2'd1; 
       end
-
-      if(history_read)
-      begin 
-        prediction_out <= pht[current_index]; 
-        prediction_index <= current_index; 
-        prediction_valid <= 1; 
-      end
-      else 
-        prediction_valid <= 0; 
     end 
   end
 

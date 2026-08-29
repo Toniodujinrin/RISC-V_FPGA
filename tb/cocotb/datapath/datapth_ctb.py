@@ -452,11 +452,17 @@ class Settings:
         self.obj_filename = obj_filename
 
 class Scoreboard:
-    def __init__(self,dut_reg_queue, dut_pc_queue, golden_reg_queue, golden_pc_queue):
+    def __init__(self,dut_reg_queue, dut_pc_queue, golden_reg_queue, golden_pc_queue,
+                 src=None):
         self.dut_reg_queue = dut_reg_queue
         self.dut_pc_queue = dut_pc_queue
         self.golden_reg_queue = golden_reg_queue
         self.golden_pc_queue = golden_pc_queue
+        #the golden's source lines, indexed by pc//4, so the log reads as a trace.
+        #without it the pc column looks scrambled on any branchy program and there
+        #is no way to tell a taken branch from a bug at a glance
+        self.src = src or []
+        self.prev_pc = None
         self.transactions_checked = 0
         self.error = 0
         self._coro = cocotb.start_soon(self._run())
@@ -480,19 +486,26 @@ class Scoreboard:
             golden_pc = await golden_pc_queue.get()
             dut_reg = await dut_reg_queue.get()
             golden_reg = await golden_reg_queue.get()
-
+            flow = "  " if (self.prev_pc is None or golden_pc == self.prev_pc + 4) else "->"
+            index = golden_pc // 4
+            text = self.src[index] if index < len(self.src) else ""
             #compare
             if dut_pc != golden_pc or golden_reg != dut_reg:
                 cocotb.log.error(f"""\n\nTransaction {self.transactions_checked}!\n
                 --- Expected (Golden): ---\npc:{self._hex(golden_pc)}\n
                 --- Got from Silicon: ---\npc:{self._hex(dut_pc)}\n
-                --- Register diff: ---\n{self._diff(golden_reg, dut_reg)}\n """
+                --- Register diff: ---\n{self._diff(golden_reg, dut_reg)}\n 
+                ---Log: --- \n {flow} {text} \n
+                """
+                
                 )
                 self.error += 1
             else:
-                cocotb.log.info(f"Transaction {self.transactions_checked} passed. "
-                                f"pc:{self._hex(golden_pc)}")
+       
+                cocotb.log.info(f"{self.transactions_checked:4} {flow} "
+                                f"pc:{self._hex(golden_pc)}  {text}")
 
+            self.prev_pc = golden_pc
             self.transactions_checked += 1
 
 
@@ -541,9 +554,34 @@ async def setup(dut, settings):
                    os.path.join(BUILD_DIR, "test.mem"))
     load_memories(dut, words)
     monitor = Monitor(dut, dut_pc_queue, dut_reg_queue)
-    scoreboard = Scoreboard(dut_reg_queue, dut_pc_queue, golden_reg_queue, golden_pc_queue)
+    scoreboard = Scoreboard(dut_reg_queue, dut_pc_queue, golden_reg_queue, golden_pc_queue,
+                            src=golden_model.instrs)
     await reset_dut(dut)
     return scoreboard, expected
+
+
+class Branch_Counter:
+    """counts branch resolutions and mispredicts off the EX resolve signals, so a
+       test can assert the predictor is actually predicting. a predictor that never
+       learns still produces correct results, so no scoreboard check can catch it"""
+
+    def __init__(self, dut):
+        self.dut = dut
+        self.branches = 0
+        self.mispredicts = 0
+        self._coro = cocotb.start_soon(self._run())
+
+    async def _run(self):
+        dut = self.dut
+        while True:
+            await RisingEdge(dut.clk)
+            await ReadOnly()
+            if sig_int(dut.reset):
+                continue
+            if sig_int(dut.ex_branch):
+                self.branches += 1
+                if sig_int(dut.ex_prediction_miss):
+                    self.mispredicts += 1
 
 
 async def finish(dut, sb, expected):
@@ -562,6 +600,60 @@ async def test_r_type(dut):
         asm_filename=os.path.join(ASM_DIR, "r_type.s"),
         obj_filename=os.path.join(BUILD_DIR, "r_type.o"),
         bin_filename=os.path.join(BUILD_DIR, "r_type.bin"),
+    )
+    scoreboard, expected = await setup(dut, settings)
+    await finish(dut, scoreboard, expected)
+
+@cocotb.test()
+async def test_loop(dut):
+    """100 iterations of a single branch. checks correctness, and that the
+       predictor converges rather than mispredicting every taken branch"""
+    settings = Settings(
+        asm_filename=os.path.join(ASM_DIR, "loop.s"),
+        obj_filename=os.path.join(BUILD_DIR, "loop.o"),
+        bin_filename=os.path.join(BUILD_DIR, "loop.bin"),
+    )
+    scoreboard, expected = await setup(dut, settings)
+    branches = Branch_Counter(dut)
+    await finish(dut, scoreboard, expected)
+
+    rate = branches.mispredicts / branches.branches
+    print(f"report: branches={branches.branches} "
+          f"mispredicts={branches.mispredicts} ({rate*100:.0f}%)")
+    #measured 10/100 once the prediction is aligned with the btb lookup. it was
+    #100% before, and the same skew made the program execute incorrectly
+    assert rate < 0.25, (f"predictor not converging: {branches.mispredicts}/"
+                         f"{branches.branches} branches mispredicted")
+
+
+@cocotb.test()
+async def test_b_type(dut):
+    settings = Settings(
+        asm_filename=os.path.join(ASM_DIR, "b_type.s"),
+        obj_filename=os.path.join(BUILD_DIR, "b_type.o"),
+        bin_filename=os.path.join(BUILD_DIR, "b_type.bin"),
+    )
+    scoreboard, expected = await setup(dut, settings)
+    await finish(dut, scoreboard, expected)
+
+
+@cocotb.test()
+async def test_sl_type(dut):
+    settings = Settings(
+        asm_filename=os.path.join(ASM_DIR, "sl_2_type.s"),
+        obj_filename=os.path.join(BUILD_DIR, "sl_2_type.o"),
+        bin_filename=os.path.join(BUILD_DIR, "sl_2_type.bin"),
+    )
+    scoreboard, expected = await setup(dut, settings)
+    await finish(dut, scoreboard, expected)
+
+
+@cocotb.test()
+async def test_full_type(dut):
+    settings = Settings(
+        asm_filename=os.path.join(ASM_DIR, "full_type.s"),
+        obj_filename=os.path.join(BUILD_DIR, "full_type.o"),
+        bin_filename=os.path.join(BUILD_DIR, "full_type.bin"),
     )
     scoreboard, expected = await setup(dut, settings)
     await finish(dut, scoreboard, expected)

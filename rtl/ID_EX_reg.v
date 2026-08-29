@@ -50,6 +50,10 @@ module ID_EX_reg
   input [$clog2(BHR_SNAPS)-1:0] bhr_snap_index, 
   input prediction_valid, 
 
+  //the forwarded operands, fed back from the datapath's forwarding muxes. only
+  //read while stalled -- see the stall branch below
+  input [DATA_WIDTH-1:0] fwd_rd_1, 
+  input [DATA_WIDTH-1:0] fwd_rd_2, 
   input flush, 
   input stall, 
 
@@ -178,6 +182,18 @@ module ID_EX_reg
       ex_prediction_index <= prediction_index; 
       ex_bhr_snap_index <= bhr_snap_index; 
       ex_prediction_valid <= prediction_valid; 
+    end
+    else
+    begin 
+      //stalled: hold everything, but re-capture the forwarded operands.
+      //a memory stall bubbles MEM/WB, so a producer in writeback is a forwarding
+      //source for exactly one cycle. an instruction parked in EX re-derives its
+      //operand combinationally every cycle, so once that source is bubbled away
+      //it falls back to the stale value it read in ID and the correct one is
+      //lost. capturing is a no-op when no forward is active, since the mux
+      //selects ex_rd_1/ex_rd_2 in that case.
+      ex_rd_1 <= fwd_rd_1; 
+      ex_rd_2 <= fwd_rd_2; 
     end
   end 
 endmodule 

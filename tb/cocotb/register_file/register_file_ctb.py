@@ -141,6 +141,14 @@ async def setup(dut,settings):
     golden_queue, dut_queue = Queue(), Queue()
     start_event = Event() 
     cocotb.start_soon(Clock(dut.clk, 1, unit="ns").start())
+
+    #register_file gained an async n_reset. undriven it floats, the array reads x,
+    #and every read fails to convert. hold it low over an edge so the file starts
+    #at zero, which is the state the golden model assumes.
+    dut.n_reset.value = 0
+    await FallingEdge(dut.clk)
+    dut.n_reset.value = 1
+
     rng = np.random.default_rng(seed=42)
 
     program = make_program(rng,settings)
