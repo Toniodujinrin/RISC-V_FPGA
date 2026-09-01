@@ -7,10 +7,12 @@ module btb
   BUFFER_DEPTH = 4
 )
 (
-  input clk, reset, 
+  input clk, reset,
+  input stall, 
   input [DATA_WIDTH-1:0] if_pc,
   input write_en, 
   input [DATA_WIDTH-1:0] ex_target,
+  input branch_taken, 
   input [DATA_WIDTH-1:0] ex_pc, 
   input [OP_CODE_WIDTH-1:0] ex_op_code, 
   output hit_miss, //high on a hit: if_pc matched a valid entry 
@@ -88,7 +90,7 @@ module btb
     end 
     else 
     begin 
-      if(write_en && ex_op_code[6:2] == `B_TYPE)
+      if(write_en && ex_op_code[6:2] == `B_TYPE && branch_taken)
       begin 
         //check if pc already exists in buffer, if not assign it to the wrap_idx location 
         if(~port_2_hit_miss)

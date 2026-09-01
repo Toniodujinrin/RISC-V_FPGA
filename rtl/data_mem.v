@@ -4,7 +4,11 @@ module data_mem //simulate byte addressed memory
   DATA_WIDTH = 32, 
   BLOCK_BITS = 256, //32 bytes or 8 words 
   D_MEM_DEPTH = 1024, 
-  WORD_OFF_BITS = 3 
+  WORD_OFF_BITS = 3, 
+  //.data and .rodata land here. the core has no data path to instruction
+  //memory, so crt0 cannot copy them out of the program image the way it would
+  //on a von Neumann machine -- they have to be loaded straight into this array
+  DATA_FILE = "build/data.mem"
 )
 (
   input clk, reset, 
@@ -109,6 +113,8 @@ module data_mem //simulate byte addressed memory
     begin 
       mem[i] = {DATA_WIDTH{1'b0}}; 
     end
+    //zeroed first, so an image shorter than the array leaves .bss ready to go
+    $readmemb(DATA_FILE, mem); 
   end
 
 endmodule

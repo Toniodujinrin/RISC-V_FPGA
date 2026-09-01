@@ -77,7 +77,8 @@ The one design decision that makes P2 cheap is in [Day 1](#the-memory-interface-
 
 ## Running C — what it actually needs
 
-Beyond a correct RV32I core, GCC output needs six things this repo does not have yet.
+Beyond a correct RV32I core, GCC output needs seven things. Three are now built; the list below says
+which, because the ordering only makes sense once you know what is left.
 
 1. **`LW`/`SW` must work.** The ABI spills registers on every non-leaf call — recursive fib is
    `sw ra,12(sp)` / `lw ra,12(sp)` before it is anything else. **Resolved 23 Aug** — `l1.v` now does
@@ -92,7 +93,29 @@ Beyond a correct RV32I core, GCC output needs six things this repo does not have
    unresolved-symbol error here is the usual first surprise. Hardware M is an optimisation, not a
    requirement.
 5. **Sub-word access.** `char`/`short` need `LB/LBU/LH/LHU/SB/SH` — see [D6](#d6-where-sub-word-access-decodes).
-6. **Somewhere for output to go** — see [Memory-mapped IO](#memory-mapped-io).
+6. **Somewhere for output to go.** **Resolved 30 Aug** — `SIM_EXIT` and a real UART behind an APB
+   bridge, see [Memory-mapped IO](#memory-mapped-io).
+7. **A way to get `.data`/`.rodata` into RAM.** This one was missing from the original list and it is
+   the one that actually blocks the ladder at step 2. The split is Harvard: the core has **no data path
+   to instruction memory**, so the usual trick — `crt0` copying `.data` from a load address in ROM to
+   its run address in RAM — *cannot work here*. Initialised data has to be placed directly into
+   `data_mem`. **Resolved 30 Aug**: `data_mem.v` takes a `DATA_FILE` and `$readmemb`s it over a zeroed
+   array (so `.bss` is ready with no work), and `load_memories()` pokes `dut.D_MEM.mem` the same way it
+   already pokes imem. `test_data_init` proves the path end to end — RAM preloaded, read back through
+   the cache, compared in the program.
+
+> **All seven closed 30 Aug — GCC-compiled C runs.** `tb/cocotb/c_test/` holds `asm/crt0.s`,
+> `link.ld` and `c_ctb.py`; `test_fib_iter` and `test_sum` both pass. Items 2, 3 and 4 were the last
+> three and were entirely software: `crt0.s` sets `gp` and `sp`, clears `.bss`, calls `main` and stores
+> the return value to `SIM_EXIT`; `link.ld` gives imem and RAM separate `MEMORY` regions; the build
+> links `-lgcc` and runs objcopy **twice**, `.text` to the imem image and `.rodata` + `.data` to the
+> dmem image.
+>
+> Two things that made the difference between a passing test and a vacuous one, worth remembering when
+> adding rungs: at `-O2` gcc folds a `const` array's sum at compile time and never touches memory, so
+> `sum.c` marks it `volatile` to force the loads; and the loader zero-fills RAM, so a `.bss` global
+> reads as 0 whether or not `crt0` cleared it — `run_c` poisons RAM past the data image with
+> `0xDEADBEEF` so the clear loop is the only thing that can make it zero.
 
 ### The C ladder
 
@@ -100,15 +123,21 @@ Beyond a correct RV32I core, GCC output needs six things this repo does not have
 
 | program | first needs |
 |---|---|
-| `fib_iter.c` — loop, no calls | registers + branches only; runs before memory works at all |
-| `sum.c` — sum a global array | `.data` init, `LW`, `gp` |
+| `fib_iter.c` — loop, no calls | registers + branches only; runs before memory works at all — ✅ **30 Aug** |
+| `sum.c` — sum a global array | `.data` init, `LW`, `gp` — ✅ **30 Aug**, covers `.rodata`, `.data` and a cleared `.bss` |
 | `fib_rec.c` — recursive | stack, `sp`, `jal`/`jalr`, spill/reload |
 | `strlen.c` / struct walk | `LB`/`LBU`, `SB` |
 | `divmod.c` | libgcc soft mul/div |
-| `hello.c` | MMIO UART + `putchar` |
+| `hello.c` | MMIO UART + `putchar` — the UART is built, but `putchar` must enable it and poll `TX_EMPTY` |
 
-Check results by storing to a known address and asserting in the TB, exactly like the `.S` tests. Do
-not depend on `printf` until `hello.c` — a failing `printf` and a failing core look identical.
+Check results by storing the pass/fail code to `SIM_EXIT` and reading it back in the TB. Do not depend
+on `printf` until `hello.c` — a failing `printf` and a failing core look identical.
+
+> **The test mode for this exists as of 30 Aug.** `run_to_exit(dut, settings, data_words=())` in
+> `datapth_ctb.py` assembles, loads both memories, runs until `exit_valid` and returns `exit_code` —
+> no golden model and no scoreboard, because a golden model of GCC output is not worth building when
+> the program checks itself. `test_exit_check` and `test_data_init` use it. A C test is the same call
+> with `gcc` in place of `as` in `assemble()`, and `data_words` from the second objcopy.
 
 ## Memory-mapped IO
 
@@ -122,20 +151,45 @@ addr[31:28] == 4'hF  ->  IO bus      (uncached, single cycle, word access)
 otherwise            ->  RAM / cache
 ```
 
+> **Built 30 Aug — the map below is the RTL, not the plan.** What was sketched as a flat table of
+> word-spaced registers is an APB bridge (`rtl/io_apb_bridge.v`) with a 4K window per slave, wired up in
+> `rtl/mmio.v`. The UART's registers are byte wide and byte addressed, so software reaches them with
+> `lb`/`sb`, not `lw`/`sw`.
+
+| window | slave |
+|---|---|
+| `0xF000_0000` – `0xF000_0FFF` | `SIM_EXIT` — answers at every offset in the window |
+| `0xF000_1000` – `0xF000_1FFF` | `UART` |
+
 | address | register | |
 |---|---|---|
-| `0xF000_0000` | `UART_TX` | write: transmit byte in `[7:0]` |
-| `0xF000_0004` | `UART_RX` | read: received byte |
-| `0xF000_0008` | `UART_STATUS` | bit0 `tx_ready`, bit1 `rx_valid` |
-| `0xF000_0010` | `GPIO_OUT` | LEDs |
-| `0xF000_0014` | `GPIO_IN` | buttons |
-| `0xF000_00FC` | `SIM_EXIT` | write ends simulation, value = exit code |
+| `0xF000_00FC` | `SIM_EXIT` | write ends the run, value = exit code |
+| `0xF000_1000` | `UART_TX_DATA` | write: starts a frame, but only if `TX_ENABLE` and `TX_EMPTY` |
+| `0xF000_1001` | `UART_RX_DATA` | read: received byte, and the read consumes `RX_VALID` |
+| `0xF000_1002` | `UART_CONTROL` | b0 `PARITY_EN`, b1 `UART_ENABLE`, b2 `RX_ENABLE`, b3 `TX_ENABLE`, b4 `RX_OVERRUN` |
+| `0xF000_1003` | `UART_CONFIG` | b1:0 baud index, b4:2 data bits − 1, b6:5 stop bits, b7 parity type. Resets to `0x3D` — 8N1 |
+| `0xF000_1004` | `UART_STATUS` | b0 `TX_BUSY`, b1 `RX_BUSY`, b2 `TX_EMPTY`, b3 `RX_VALID`, b4 `PARITY_ERROR`. Read only; a read clears `PARITY_ERROR` |
+| `0xF000_1005` | `UART_IRQ` | storage only — there is no interrupt controller upstream |
 
-- **Build `SIM_EXIT` first** — before the UART, before anything. A store that makes the TB `$finish`
-  with a pass/fail code is what turns every C program into a self-checking test.
-- **In sim the UART is two lines:** on a write to `UART_TX`, `$write("%c", data)`. `printf` works long
-  before any UART RTL exists; the real one is an [S1](#stretch--after-tuesday) concern.
-- Tie `tx_ready` high in the sim model so polling loops fall straight through.
+GPIO is not built. Windows 2 and 3 are unpopulated on purpose: `N_C` is 2, so an access there fails the
+bridge's decoder and returns `io_slv_err` instead of hanging. That distinction matters — the bridge's
+ACCESS state has no timeout, so a window with nothing in it to drive `PREADY` would wedge the core
+permanently on a typo'd address.
+
+`RX_OVERRUN` is in `CONTROL` rather than `STATUS` because it has to be *writable*: hardware sets it when
+a frame lands on an unread `RX_DATA`, and it gates the receiver off until software clears it. Clearing
+it is a read-modify-write of the whole byte — write `0x0E` back, not `0x00`, or the enables go with it.
+
+- **`SIM_EXIT` first** — ✅ **done 30 Aug**, `rtl/io/sim_exit.v`. A store that ends the run with a
+  pass/fail code is what turns every C program into a self-checking test. `FINISH=0` for cocotb, which
+  cannot survive an RTL `$finish`: the Makefile passes `-Pdata_path.SIM_EXIT_FINISH=0` and the test
+  awaits `exit_valid` itself.
+- **The UART is real RTL, not a two-line sim model** (`rtl/io/uart.v`, 30 Aug), so `putchar` has real
+  work to do: enable the UART first (`UART_CONTROL` = `0x0E`), then poll `TX_EMPTY` before every byte.
+  A write to `TX_DATA` while the transmitter is busy is *refused*, not queued — there is no FIFO.
+- `TX_EMPTY` is set out of reset, so the first `putchar` falls straight through; every one after it
+  waits a full frame. At the 8N1 default that is 10 bit times, so keep `printf` out of the hot path of
+  any test with a cycle budget.
 - MMIO reads must not be cached or speculative; MMIO writes must not be buffered or reordered.
 - The decoder belongs in MEM, next to the load/store path — **not** inside `l1.v`. Keeping it outside
   means the cache never sees an IO address and needs no changes.
@@ -171,8 +225,8 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 | `rtl/control.v` | 88 | ✅ | **Updated 23 Aug** — `mem_to_reg` widened to 3 bits (5 writeback sources); standalone `lui` output folded in as encoding `011`. No SYSTEM arm yet |
 | `rtl/pc_controller.v` | 38 | ✅ | **Done 23 Aug** — priority encoder, lints clean. See [PC redirect priority](#pc-redirect-priority) |
 | `rtl/program_counter.v` | 22 | ✅ | **Done 23 Aug** — async-reset PC register |
-| `rtl/inst_mem.v` | 33 | ✅ | **Done 28 Aug** — synchronous ROM, `$readmemb` init, range-checked `output_valid`. Re-timed against the PC rather than stalled; see [Instruction fetch](#instruction-fetch-is-a-retimed-synchronous-rom-28-aug) |
-| `rtl/data_mem.v` | 104 | ✅ | **Done 28 Aug** — word-wide array, counter-driven block burst, latching FSM. Backs the cache. Verified with `tb/tb_dmem.v`; see [The backing memory](#the-backing-memory-28-aug) |
+| `rtl/inst_mem.v` | 34 | ✅ | **Done 28 Aug, `IMEM_DEPTH` 1024 → 8192 on 30 Aug** — 32 KB of code, which C plus libgcc's soft multiply/divide will want. On Cyclone V that is 256 Kbit, ~26 M10K blocks out of the 397 on a 5CSEMA5. Synchronous ROM, `$readmemb` init, range-checked `output_valid`. Re-timed against the PC rather than stalled; see [Instruction fetch](#instruction-fetch-is-a-retimed-synchronous-rom-28-aug) |
+| `rtl/data_mem.v` | 120 | ✅ | **Done 28 Aug, `DATA_FILE` init 30 Aug** — word-wide array, counter-driven block burst, latching FSM. Backs the cache. Zeroed then `$readmemb`-ed at time 0, which is the only way `.data`/`.rodata` can reach a Harvard core — see [Running C](#running-c--what-it-actually-needs) item 7. Still 1024 words: `.data` + `.bss` + the stack all live in 4 KB, so watch it once `fib_rec` runs. Verified with `tb/tb_dmem.v`; see [The backing memory](#the-backing-memory-28-aug) |
 | `rtl/hazard_detector.v` | 85 | ✅ | **Done 25 Aug** — pure combinational. `req_stall` outranks every redirect; exports `mem_advance` to the LSU. Wired into `datapath.v` |
 | `rtl/lsu.v` | 147 | ✅ | **Done 25 Aug, load data fixed 29 Aug** — owns the cache handshake: issue-once, valid held until accepted, combinational `req_stall`, `DONE` state, MMIO bypass. The response is now bypassed around its register on the cycle the stall drops; before that every `lw` wrote back stale data. See [The memory-stall handshake](#the-memory-stall-handshake) |
 | `rtl/IF_ID_reg.v` | 74 | ✅ | **Done 23 Aug** — carries the full prediction payload; flush drops it. Verified in sim |
@@ -180,7 +234,11 @@ Compile-checked with `iverilog -g2012` on 22 Aug:
 | `rtl/EX_MEM_reg.v` | 124 | ✅ | **Done 23 Aug** — `em_` prefix. Completes all four pipeline registers; chain verified in sim |
 | `rtl/MEM_WB_reg.v` | 97 | ✅ | **Done 23 Aug** — module renamed `MEM_WB_reg` to match the file. All 5 writeback sources cross. `csr_write` still to add for Day 3 |
 | `rtl/BE_logic.v` | 22 | ✅ | **Done 24 Aug** — load sign-extension, the surviving half of the paper's `BE_Logic`. Verified with the cache end to end |
-| `rtl/datapath.v` | 700 | ✅ | **Wired 24 Aug, LSU + hazard unit 25 Aug, executing programs 27 Aug, both memories internal 28 Aug.** All five stages plus `LSU`/`HAZARD`; the stall/flush stubs are gone and the `io_*` bus is brought out to the boundary. Runs assembled R-type/I-type programs correctly against a golden model. CSR is still a TODO stub. See [Datapath wiring](#datapath-wiring-24-aug), [The datapath testbench](#the-datapath-testbench-27-aug) |
+| `rtl/datapath.v` | 700 | ✅ | **Wired 24 Aug, LSU + hazard unit 25 Aug, executing programs 27 Aug, both memories internal 28 Aug.** All five stages plus `LSU`/`HAZARD`; the stall/flush stubs are gone. **`mmio.v` instantiated 30 Aug**, so the `io_*` bus no longer crosses the boundary — only the UART pins, `exit_valid`/`exit_code` and `io_slv_err` do. Runs assembled R-type/I-type programs correctly against a golden model. CSR is still a TODO stub. See [Datapath wiring](#datapath-wiring-24-aug), [The datapath testbench](#the-datapath-testbench-27-aug) |
+| `rtl/io_apb_bridge.v` | 172 | ✅ | **Done 30 Aug** — LSU port to APB3 master. Registered `PSEL`/`PENABLE` FSM, 4K-window decoder, `PSTRB` and lane alignment from `io_size` (a `sb` to an odd address lands in the right byte), sub-word reads masked to match what the cache hands `BE_logic`. `io_slv_err` on decode error or `PSLVERR`. **No timeout in `ACCESS`** — every populated window must drive `PREADY` |
+| `rtl/mmio.v` | 149 | ✅ | **Done 30 Aug** — the bridge plus its slaves. `N_C = 2`, so windows 2 and 3 fail decode rather than hang. `sim_exit` sits behind a `generate` on `SIM_EXIT_PRESENT`: drop it for the fitter build, the block being simulation only |
+| `rtl/io/sim_exit.v` | 77 | ✅ | **Done 30 Aug** — zero wait state, answers at every offset in its window so a stray access returns instead of hanging. `FINISH=0` for cocotb |
+| `rtl/io/uart.v` | 619 | ✅ | **Done 30 Aug** — APB slave, `uart_tx`, `uart_rx`, `tick_gen`. Byte-wide register file, configurable 5–8 data bits / 1–2 stop bits / odd-even parity, `RX_OVERRUN` gating the receiver. Loopback-verified through the bridge including a corrupted frame. Its `tick_gen` never ticked at all before 30 Aug — a missing `begin`/`end` put `tick <= 0` outside the `else`, so it overrode the assert every cycle |
 
 **Committed through `f324e45` ("tb passes with r_type").** `.gitignore` landed 27 Aug — but it has a
 typo, **`sim_builf` should be `sim_build`**, so every simulation still dirties the tree. It is also

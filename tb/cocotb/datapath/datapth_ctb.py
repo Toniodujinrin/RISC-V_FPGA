@@ -50,7 +50,7 @@ def write_mem_file(words, path):
             file.write(f"{word:032b}\n")
 
 
-def load_memories(dut, words):
+def load_memories(dut, words, data_words=()):
     imem = dut.IMEM.mem #depth of instruction memory
     depth = len(imem)
     assert len(words) <= depth, f"program is {len(words)} words, imem holds {depth}"
@@ -58,6 +58,29 @@ def load_memories(dut, words):
     #zero fill past the end of the program.
     for i in range(depth):
         imem[i].value = words[i] if i < len(words) else 0
+
+    #.data and .rodata go straight into RAM at word 0. the core has no data path
+    #to imem, so crt0 cannot copy them out of the program image the way it would
+    #on a von Neumann machine. the cache comes up invalid, so the first load of
+    #each block misses and pulls the initialised copy through
+    dmem = dut.D_MEM.mem
+    d_depth = len(dmem)
+    assert len(data_words) <= d_depth, \
+        f"data image is {len(data_words)} words, ram holds {d_depth}"
+    for i in range(d_depth):
+        dmem[i].value = data_words[i] if i < len(data_words) else 0
+
+
+def write_images(dut, words, data_words=()):
+    """both .mem files, padded to the full depth of their array: $readmemb warns
+       on a short file, and a word left over from the previous test would
+       otherwise survive wherever the current one does not reach"""
+    depth = len(dut.IMEM.mem)
+    write_mem_file(words + [0]*(depth - len(words)),
+                   os.path.join(BUILD_DIR, "test.mem"))
+    d_depth = len(dut.D_MEM.mem)
+    write_mem_file(list(data_words) + [0]*(d_depth - len(data_words)),
+                   os.path.join(BUILD_DIR, "data.mem"))
 
 
 class Golden_Model:
@@ -451,6 +474,25 @@ class Settings:
         self.asm_filename = asm_filename
         self.obj_filename = obj_filename
 
+async def run_to_exit(dut, settings, data_words=(), timeout_cycles=20000):
+    """run a self checking program: no golden model, no scoreboard. the program
+       stores its own pass/fail to SIM_EXIT and this returns that exit code.
+       this is the mode C tests use -- a golden model of gcc output is not worth
+       building when the program can check itself"""
+    assemble(settings)
+    cocotb.start_soon(Clock(dut.clk, 1, unit="ns").start())
+    words = read_image(settings.bin_filename)
+    write_images(dut, words, data_words)
+    load_memories(dut, words, data_words)
+    await reset_dut(dut)
+
+    for _ in range(timeout_cycles):
+        await RisingEdge(dut.clk)
+        if sig_int(dut.exit_valid):
+            return sig_int(dut.exit_code)
+    raise AssertionError(f"no SIM_EXIT store within {timeout_cycles} cycles")
+
+
 class Scoreboard:
     def __init__(self,dut_reg_queue, dut_pc_queue, golden_reg_queue, golden_pc_queue,
                  src=None):
@@ -511,8 +553,7 @@ class Scoreboard:
 
 async def reset_dut(dut, cycles=4):
     dut.reset.value = 1
-    dut.io_data_out.value = 0
-    dut.io_ack.value = 0
+    dut.uart_rx.value = 1  # a uart line idles high
     for _ in range(cycles):
         await FallingEdge(dut.clk)
     dut.reset.value = 0
@@ -548,10 +589,7 @@ async def setup(dut, settings):
     assert expected, f"{settings.asm_filename} retired no instructions"
     cocotb.start_soon(Clock(dut.clk, 1, unit="ns").start())
     words = read_image(settings.bin_filename)
-    #padded to the full rom depth so $readmemb has no gap to warn about. the pad is nop
-    depth = len(dut.IMEM.mem)
-    write_mem_file(words + [0]*(depth - len(words)),
-                   os.path.join(BUILD_DIR, "test.mem"))
+    write_images(dut, words)
     load_memories(dut, words)
     monitor = Monitor(dut, dut_pc_queue, dut_reg_queue)
     scoreboard = Scoreboard(dut_reg_queue, dut_pc_queue, golden_reg_queue, golden_pc_queue,
@@ -668,3 +706,29 @@ async def test_hazards_type(dut):
     )
     scoreboard, expected = await setup(dut, settings)
     await finish(dut, scoreboard, expected)
+
+
+@cocotb.test()
+async def test_exit_check(dut):
+    """the self checking path itself: a program that computes its own exit code
+       and stores it to SIM_EXIT"""
+    settings = Settings(
+        asm_filename=os.path.join(ASM_DIR, "exit_check.s"),
+        obj_filename=os.path.join(BUILD_DIR, "exit_check.o"),
+        bin_filename=os.path.join(BUILD_DIR, "exit_check.bin"),
+    )
+    code = await run_to_exit(dut, settings)
+    assert code == 0, f"exit code {code}, expected 0"
+
+
+@cocotb.test()
+async def test_data_init(dut):
+    """RAM preloaded the way a linker script's .data section will be, read back
+       through the cache by the program"""
+    settings = Settings(
+        asm_filename=os.path.join(ASM_DIR, "data_init.s"),
+        obj_filename=os.path.join(BUILD_DIR, "data_init.o"),
+        bin_filename=os.path.join(BUILD_DIR, "data_init.bin"),
+    )
+    code = await run_to_exit(dut, settings, data_words=[0xDEADBEEF])
+    assert code == 0, f"exit code {code}, expected 0"

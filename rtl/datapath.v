@@ -10,23 +10,26 @@ module data_path
   BTB_DEPTH = 8, 
   BLOCK_BITS = 32*8, //8 words of DATA_WIDTH per block
   WB_FIFO_DEPTH = 8, 
-  IMEM_DEPTH = 1024, 
+  IMEM_DEPTH = 8192, 
   PROGRAM_FILE = "build/test.mem",
+  DATA_FILE = "build/data.mem",
   CACHE_SET_N = 128, 
-  DATA_MEM_DEPTH = 1024
+  DATA_MEM_DEPTH = 1024, 
+  SIM_EXIT_PRESENT = 1, 
+  SIM_EXIT_FINISH = 1
 )
 (
   input clk, reset, 
-  //io bus behind the lsu's mmio bypass. no slave exists yet, so this is the
-  //only interface still brought out: inst_mem and data_mem are both
-  //instantiated below, so fetch and the cache's backing port stay internal
-  input [DATA_WIDTH-1:0] io_data_out, 
-  input io_ack, 
-  output io_req, 
-  output io_write_read, 
-  output [DATA_WIDTH-1:0] io_data_in, 
-  output [1:0] io_size, 
-  output [DATA_WIDTH-1:0] io_addr_in
+  //the mmio subsystem is instantiated below alongside both memories, so all
+  //that still crosses this boundary is the uart's two pins and sim_exit's
+  //observation port
+  input uart_rx, 
+  output uart_tx, 
+  output exit_valid, 
+  output [DATA_WIDTH-1:0] exit_code, 
+  //flagged by the bridge on a decode error or a slave error. nothing consumes
+  //it yet -- the lsu has no error input and there is no trap path
+  output io_slv_err
 ); 
 
   //////////////////////////////////////////////////////////////
@@ -124,9 +127,11 @@ module data_path
     .clk(clk), 
     .reset(reset), 
     .if_pc(if_pc), 
-    .write_en(ex_branch), 
+    .write_en(ex_branch),
+    .branch_taken(ex_branch_taken),
     .ex_target(ex_branch_target_actual), 
-    .ex_pc(ex_pc), 
+    .ex_pc(ex_pc),
+    .stall(pc_stall),
     .ex_op_code(ex_op_code), 
     .hit_miss(btb_hit), 
     .target(btb_target)
@@ -143,7 +148,8 @@ module data_path
     .clk(clk), 
     .reset(reset), 
     .history_write(ex_branch), 
-    .predicted_index(ex_prediction_index), 
+    .predicted_index(ex_prediction_index),
+    .stall(pc_stall),
     .predicted_in(ex_branch_prediction), 
     .actually_taken(ex_branch_taken), 
     .predicted_valid(ex_prediction_valid), 
@@ -522,6 +528,9 @@ module data_path
 
   //the lsu owns the whole memory-stage handshake: it issues each access once,
   //holds req_stall until the response, and routes mmio away from the cache
+  wire io_req, io_write_read, io_ack; 
+  wire [1:0] io_size; 
+  wire [DATA_WIDTH-1:0] io_data_in, io_addr_in, io_data_out; 
   lsu
   #(
     .DATA_WIDTH(DATA_WIDTH), 
@@ -558,6 +567,32 @@ module data_path
 
     .req_stall(req_stall), 
     .mem_advance(mem_advance)
+  ); 
+
+  mmio
+  #(
+    .DATA_WIDTH(DATA_WIDTH), 
+    .SIM_EXIT_PRESENT(SIM_EXIT_PRESENT), 
+    .SIM_EXIT_FINISH(SIM_EXIT_FINISH)
+  )
+  MMIO
+  (
+    .clk(clk), 
+    .reset(reset), 
+
+    .io_req(io_req), 
+    .io_write_read(io_write_read), 
+    .io_data_in(io_data_in), 
+    .io_size(io_size), 
+    .io_addr_in(io_addr_in), 
+    .io_ack(io_ack), 
+    .io_slv_err(io_slv_err), 
+    .io_data_out(io_data_out), 
+
+    .uart_rx(uart_rx), 
+    .uart_tx(uart_tx), 
+    .exit_valid(exit_valid), 
+    .exit_code(exit_code)
   ); 
 
   hazard_detector

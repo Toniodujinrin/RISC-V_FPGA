@@ -1,7 +1,8 @@
 SIM ?= icarus
 TOPLEVEL_LANG ?= verilog
 WAVES ?= 1
-export PYTHONPATH := $(PWD)/..:$(PYTHONPATH)
+# the loader helpers live with the datapath testbench rather than being copied
+export PYTHONPATH := $(PWD)/../datapath:$(PYTHONPATH)
 
 RTL = $(PWD)/../../../rtl
 
@@ -35,11 +36,11 @@ VERILOG_SOURCES += $(RTL)/io/sim_exit.v
 # riscv_defs.vh is `include-d by control.v
 COMPILE_ARGS += -I$(RTL)
 
-# an RTL $finish kills cocotb before the scoreboard runs, so sim_exit only
-# raises exit_valid here and the test awaits it
+# an RTL $finish kills cocotb before the assertion runs, so sim_exit only raises
+# exit_valid here and the test awaits it
 COMPILE_ARGS += -Pdata_path.SIM_EXIT_FINISH=0
 
 TOPLEVEL = data_path
-MODULE = datapth_ctb
+MODULE = c_ctb
 
 include $(shell cocotb-config --makefiles)/Makefile.sim

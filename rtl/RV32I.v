@@ -2,12 +2,14 @@
 //
 //Both memories now live inside data_path: inst_mem.v and data_mem.v were
 //instantiated there on 28 Aug, so neither instruction fetch nor the cache's
-//BLOCK_BITS-wide backing port crosses this boundary any more. Only the io bus
-//is still brought out -- ~101 signals -- because no IO slave exists yet.
+//BLOCK_BITS-wide backing port crosses this boundary any more. mmio.v followed,
+//taking the io bus with it, so the boundary is now just the uart pins and
+//sim_exit's observation port.
 //
-//Those io ports are declared VIRTUAL_PIN in syn/virtual_pins.tcl so the fitter
+//Those ports are declared VIRTUAL_PIN in syn/virtual_pins.tcl so the fitter
 //does not have to place them; only clk and reset stay real. Keep that file in
-//step with this port list.
+//step with this port list. Set SIM_EXIT_PRESENT to 0 for a fitter build --
+//sim_exit is a simulation block with no business in the fitted design.
 //
 //This is a timing/area probe, not the SoC top. Note the two memories are now
 //inside the probe, so fitter area numbers include them -- IMEM_DEPTH and
@@ -24,23 +26,25 @@ module RV32I
   BTB_DEPTH = 8,
   BLOCK_BITS = 32*8,
   WB_FIFO_DEPTH = 8,
-  IMEM_DEPTH = 1024,
+  IMEM_DEPTH = 8192,
   PROGRAM_FILE = "build/test.mem",
+  DATA_FILE = "build/data.mem",
   CACHE_SET_N = 128,
-  DATA_MEM_DEPTH = 1024
+  DATA_MEM_DEPTH = 1024,
+  SIM_EXIT_PRESENT = 1,
+  SIM_EXIT_FINISH = 1
 )
 (
   input clk, reset,
 
 
-  //io bus behind the lsu's mmio bypass
-  input [DATA_WIDTH-1:0] io_data_out, 
-  input io_ack, 
-  output io_req, 
-  output io_write_read, 
-  output [DATA_WIDTH-1:0] io_data_in, 
-  output [1:0] io_size, 
-  output [DATA_WIDTH-1:0] io_addr_in
+  //the mmio subsystem now lives inside data_path, so the io bus no longer
+  //crosses this boundary -- only the uart pins and sim_exit's observation port
+  input uart_rx, 
+  output uart_tx, 
+  output exit_valid, 
+  output [DATA_WIDTH-1:0] exit_code, 
+  output io_slv_err
 );
 
   data_path
@@ -56,8 +60,11 @@ module RV32I
     .WB_FIFO_DEPTH(WB_FIFO_DEPTH),
     .IMEM_DEPTH(IMEM_DEPTH),
     .PROGRAM_FILE(PROGRAM_FILE),
+    .DATA_FILE(DATA_FILE),
     .CACHE_SET_N(CACHE_SET_N),
-    .DATA_MEM_DEPTH(DATA_MEM_DEPTH)
+    .DATA_MEM_DEPTH(DATA_MEM_DEPTH),
+    .SIM_EXIT_PRESENT(SIM_EXIT_PRESENT),
+    .SIM_EXIT_FINISH(SIM_EXIT_FINISH)
   )
   core
   (
@@ -65,13 +72,11 @@ module RV32I
     .reset(reset),
 
 
-    .io_data_out(io_data_out),
-    .io_ack(io_ack),
-    .io_req(io_req),
-    .io_write_read(io_write_read),
-    .io_data_in(io_data_in),
-    .io_size(io_size),
-    .io_addr_in(io_addr_in)
+    .uart_rx(uart_rx),
+    .uart_tx(uart_tx),
+    .exit_valid(exit_valid),
+    .exit_code(exit_code),
+    .io_slv_err(io_slv_err)
   );
 
 endmodule

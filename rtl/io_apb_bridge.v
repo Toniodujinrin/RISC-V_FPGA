@@ -1,4 +1,4 @@
-module apb_interconnect
+module io_apb_bridge
 #(
   parameter 
   DATA_WIDTH = 32, 
@@ -24,22 +24,26 @@ module apb_interconnect
   output reg [DATA_WIDTH-1:0] PADDR,
   output reg [3:0] PSTRB,
   input [N_C-1:0] PREADY, 
+  input [N_C-1:0] PSLVERR, 
   input [(N_C*DATA_WIDTH)-1:0] PRDATA
 );
  
   reg PREADY_C;
+  reg PSLVERR_C; 
   reg [DATA_WIDTH-1:0] PRDATA_C; 
-  integer i; 
+  integer m; 
   always@(*)
   begin 
     PRDATA_C = 0;
     PREADY_C = 1'b0; 
-    for(i = 0; i < N_C; i = i+1)
+    PSLVERR_C = 1'b0; 
+    for(m = 0; m < N_C; m = m+1)
     begin 
-      if(PSEL[i])
+      if(PSEL[m])
       begin 
-        PREADY_C = PREADY[i]; 
-        PRDATA_C = PRDATA[(i*DATA_WIDTH) +: DATA_WIDTH]; 
+        PREADY_C = PREADY[m]; 
+        PSLVERR_C = PSLVERR[m]; 
+        PRDATA_C = PRDATA[(m*DATA_WIDTH) +: DATA_WIDTH]; 
       end
     end
   end
@@ -54,16 +58,40 @@ module apb_interconnect
   //0xF000_2000 ─ 0xF000_2FFF    Peripheral 2
   //0xF000_3000 ─ 0xF000_3FFF    Peripheral 3
 
-  wire [3:0] decoded_sel; 
+  reg [N_C-1:0] decoded_sel; 
   wire decode_err; 
+ 
+  integer d;
+  always@(*)
+  begin
+    for(d = 0; d < N_C ; d = d+1)
+    begin 
+      decoded_sel[d] = (io_addr_in[15:12] == d[3:0]); 
+    end 
+  end
 
-  assign decoded_sel[0] = (io_addr_in[15:12] == 4'h0); 
-  assign decoded_sel[1] = (io_addr_in[15:12] == 4'h1); 
-  assign decoded_sel[2] = (io_addr_in[15:12] == 4'h2); 
-  assign decoded_sel[3] = (io_addr_in[15:12] == 4'h3); 
+  assign decode_err = ~|decoded_sel || (|io_addr_in[27:16] != 0);
   
-  assign decode_err = ~|decoded_sel;
-  
+  //BE_logic extracts a load from the bottom lanes, so the data side of this
+  //bridge is little endian on both directions: the store is shifted up into the
+  //addressed lane, the load is shifted back down. a word access is always
+  //aligned, so its shift is 0
+  wire [4:0] lane_shift; 
+  assign lane_shift = {io_addr_in[1:0], 3'b000}; 
+
+  //the cache zero extends a sub-word read before BE_logic ever sees it, so the
+  //io path has to hand back the same shape. a slave that drives all four lanes
+  //would otherwise leak the rest of the word into an LBU
+  reg [1:0] size_r; 
+  wire [DATA_WIDTH-1:0] rd_lane, rd_data; 
+  assign rd_lane = PRDATA_C >> {PADDR[1:0], 3'b000}; 
+  assign rd_data = (size_r == 2'b00)? {{(DATA_WIDTH-8){1'b0}},  rd_lane[7:0]} : 
+                   (size_r == 2'b01)? {{(DATA_WIDTH-16){1'b0}}, rd_lane[15:0]} : rd_lane; 
+
+  wire [3:0] req_strb; 
+  assign req_strb = (io_size == 2'b00)? (4'b0001 << io_addr_in[1:0]) : 
+                    (io_size == 2'b01)? (4'b0011 << io_addr_in[1:0]) : 4'b1111; 
+
   localparam IDLE = 2'd0;  
   localparam SETUP = 2'd1; 
   localparam ACCESS = 2'd2; 
@@ -78,6 +106,7 @@ module apb_interconnect
       PWDATA <= 0; 
       PADDR <= 0; 
       PSTRB <= 0; 
+      size_r <= 0; 
       PENABLE <= 0; 
       io_ack <= 0;
       io_data_out <= 0; 
@@ -100,9 +129,10 @@ module apb_interconnect
             begin 
               PSEL <= decoded_sel; 
               PWRITE <= io_write_read; 
-              PWDATA <= io_data_in ;
+              PWDATA <= io_data_in << lane_shift;
               PADDR <= io_addr_in; 
-              PSTRB <= 4'b1111; 
+              PSTRB <= req_strb; 
+              size_r <= io_size; 
               current_state <= SETUP; 
               io_ack <= 0; 
               io_slv_err <= 0; 
@@ -128,10 +158,13 @@ module apb_interconnect
             PENABLE <= 0; 
             PSEL <= 0; 
             io_ack <= 1; 
-            io_data_out <= PRDATA_C; 
+            io_data_out <= rd_data; 
+            io_slv_err <= PSLVERR_C; 
             current_state <= IDLE; 
           end 
         end
+        default: 
+          current_state <= IDLE; 
       endcase
     end
   end
