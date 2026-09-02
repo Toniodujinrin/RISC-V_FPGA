@@ -22,6 +22,10 @@ C_DIR = os.path.join(HERE, "c")
 BUILD_DIR = os.path.join(HERE, "build")
 CRT0 = os.path.join(HERE, "asm", "crt0.s")
 LINK_SCRIPT = os.path.join(HERE, "link.ld")
+#the toolchain ships no libc headers or implementations, so the freestanding
+#ones in lib/ are compiled into every program (see lib/string.h)
+LIB_DIR = os.path.join(HERE, "lib")
+STRING_C = os.path.join(LIB_DIR, "string.c")
 
 
 def compile_c(name):
@@ -41,7 +45,8 @@ def compile_c(name):
         "-nostdlib", "-nostartfiles", "-ffreestanding",
         "-O2", "-Wall", "-Wextra",
         "-T", LINK_SCRIPT,
-        CRT0, os.path.join(C_DIR, f"{name}.c"),
+        "-I", LIB_DIR,
+        CRT0, os.path.join(C_DIR, f"{name}.c"), STRING_C,
         "-o", elf,
         "-lgcc", #allows for complex arithmetic not supported by processor, and applies them in software
     ], check=True)

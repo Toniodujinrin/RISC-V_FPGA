@@ -8,7 +8,7 @@ module data_mem //simulate byte addressed memory
   //.data and .rodata land here. the core has no data path to instruction
   //memory, so crt0 cannot copy them out of the program image the way it would
   //on a von Neumann machine -- they have to be loaded straight into this array
-  DATA_FILE = "build/data.mem"
+  DATA_FILE = "programs/data.mem"
 )
 (
   input clk, reset, 

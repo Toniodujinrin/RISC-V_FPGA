@@ -12,11 +12,7 @@ module mmio
 #(
   parameter
   DATA_WIDTH = 32,
-  //1 keeps sim_exit in the design. drop it to 0 for the fitter build, the block
-  //being simulation only -- its window then answers with an error
   SIM_EXIT_PRESENT = 1,
-  //cocotb cannot survive an RTL $finish, so a cocotb build wants 0 here and
-  //should await exit_valid itself
   SIM_EXIT_FINISH = 1
 )
 (
@@ -90,8 +86,7 @@ module mmio
   generate
   if(SIM_EXIT_PRESENT)
   begin: SIM_EXIT_BLOCK
-    //zero wait state and it answers for every offset in its window, so a stray
-    //access to an unimplemented one returns instead of hanging
+    //zero wait state
     sim_exit
     #(
       .APB_DATA_WIDTH(DATA_WIDTH),

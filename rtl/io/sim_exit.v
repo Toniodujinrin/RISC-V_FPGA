@@ -2,12 +2,7 @@
 //code. This is the whole point of the block: it turns every program from
 //"stare at a waveform" into "pass or fail".
 //
-//Simulation only. There is deliberately no synthesis guard, because there is
-//no reason to ever instantiate this in the fitter build -- leave it out of the
-//synthesis file list instead, the way tb/ is left out.
-//
-//APB slave, zero wait state: PREADY is tied high, so the transfer completes in
-//the ACCESS phase the bridge drives it in.
+//Simulation only.
 module sim_exit
 #(
   parameter

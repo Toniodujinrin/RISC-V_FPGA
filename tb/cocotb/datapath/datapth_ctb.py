@@ -203,7 +203,7 @@ class Golden_Model:
                 else:
                     instr_wrong = True
 
-            case x if x in s_type_instr:
+            case x if x in s_type_instri:
                 instr_class = "s_type"
                 if(len(split_instr) != 2):
                     instr_wrong = True

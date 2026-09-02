@@ -1,19 +1,30 @@
-//Synthesis top level.
+//SoC top level -- the board build.
 //
-//Both memories now live inside data_path: inst_mem.v and data_mem.v were
-//instantiated there on 28 Aug, so neither instruction fetch nor the cache's
-//BLOCK_BITS-wide backing port crosses this boundary any more. mmio.v followed,
-//taking the io bus with it, so the boundary is now just the uart pins and
-//sim_exit's observation port.
+//This file used to be a virtual-pin timing/area probe. That probe is gone: the
+//port list is now just the real board pins (clk, reset_n, uart_rx, uart_tx)
+//plus io_slv_err as a bring-up LED driver, and syn/virtual_pins.tcl has been
+//deleted with it.
 //
-//Those ports are declared VIRTUAL_PIN in syn/virtual_pins.tcl so the fitter
-//does not have to place them; only clk and reset stay real. Keep that file in
-//step with this port list. Set SIM_EXIT_PRESENT to 0 for a fitter build --
-//sim_exit is a simulation block with no business in the fitted design.
+//reset_n is active low, matching a KEY button on the DE10-Standard
+//(5CSXFC6D6F31C6). The reset synchroniser below asserts asynchronously and
+//deasserts synchronously, so every internal block that uses async reset keeps
+//working and the whole core leaves reset on one clean, met, clock edge.
 //
-//This is a timing/area probe, not the SoC top. Note the two memories are now
-//inside the probe, so fitter area numbers include them -- IMEM_DEPTH and
-//DATA_MEM_DEPTH are passed through here for exactly that reason.
+//SIM_EXIT_PRESENT is 0: sim_exit is a simulation block and is not instantiated
+//in a fitted design. A store to its window then answers with io_slv_err rather
+//than hanging (see rtl/mmio.v). Flip it back to 1 and re-add the exit ports if
+//the exit code is wanted on hardware LEDs during bring-up.
+//
+//Memory init: inst_mem/data_mem take $readmemb on Verilog .mem files, which
+//Quartus does not honour -- PROGRAM_FILE/DATA_FILE must be converted to
+//.mif/.hex and attached via ram_init_file / quartus_cdb --update_mif before
+//programming the board.
+//
+//Clock: the board oscillator is fed straight through, so the design runs at
+//50 MHz, matching uart.v's hardwired CLOCK_SPEED. The 100 MHz SDC in syn/ is a
+//timing-closure target only -- the aim is to prove 100 MHz closes, not to run
+//there. A PLL goes here if 100 MHz ever becomes the run clock (AND its locked
+//into the reset release).
 module RV32I
 #(
   parameter
@@ -27,25 +38,33 @@ module RV32I
   BLOCK_BITS = 32*8,
   WB_FIFO_DEPTH = 8,
   IMEM_DEPTH = 8192,
-  PROGRAM_FILE = "build/test.mem",
-  DATA_FILE = "build/data.mem",
+  PROGRAM_FILE = "programs/test.mem",
+  DATA_FILE = "programs/data.mem",
   CACHE_SET_N = 128,
   DATA_MEM_DEPTH = 1024,
-  SIM_EXIT_PRESENT = 1,
-  SIM_EXIT_FINISH = 1
+  SIM_EXIT_PRESENT = 0,
+  SIM_EXIT_FINISH = 0
 )
 (
-  input clk, reset,
-
-
-  //the mmio subsystem now lives inside data_path, so the io bus no longer
-  //crosses this boundary -- only the uart pins and sim_exit's observation port
-  input uart_rx, 
-  output uart_tx, 
-  output exit_valid, 
-  output [DATA_WIDTH-1:0] exit_code, 
+  input clk,
+  //board reset button, active low
+  input reset_n,
+  input uart_rx,
+  output uart_tx,
+  //flagged by the bridge on a decode error or a slave error. worth an LED on
+  //bring-up: a stray MMIO access is exactly the failure that looks like a hang
   output io_slv_err
 );
+
+  //async assert, sync deassert: the chain is set asynchronously while the
+  //button is down, and cleared only on clock edges after it comes back up.
+  reg [1:0] rst_chain;
+  always @(posedge clk or negedge reset_n)
+  begin
+    if (!reset_n) rst_chain <= 2'b11;
+    else          rst_chain <= {rst_chain[0], 1'b0};
+  end
+  wire core_reset = rst_chain[1];
 
   data_path
   #(
@@ -69,13 +88,10 @@ module RV32I
   core
   (
     .clk(clk),
-    .reset(reset),
-
+    .reset(core_reset),
 
     .uart_rx(uart_rx),
     .uart_tx(uart_tx),
-    .exit_valid(exit_valid),
-    .exit_code(exit_code),
     .io_slv_err(io_slv_err)
   );
 

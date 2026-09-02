@@ -3,7 +3,7 @@ module inst_mem
   parameter 
   DATA_WIDTH = 32, 
   IMEM_DEPTH = 128, 
-  PROGRAM_FILE = "build/test.mem"
+  PROGRAM_FILE = "programs/test.mem"
 )
 (
   input clk, 
