@@ -9,6 +9,20 @@ Reproducing **RV32I46F_5SP** from *BASIC_RV32s: An Open-Source Microarchitectura
 - **Toolchain present:** `iverilog`, `verilator`, `gtkwave`, `cocotb` 2.0.1 (in `.venv`), **RISC-V binutils/GCC (27 Aug)**
 - **Toolchain missing:** FPGA vendor tools only — see [Day 0](#day-0--saturday-morning-unblock-3-h)
 
+> **5 Sep — scope change: Harvard → Von Neumann, plus a bootloader and Track D.** The two-memory
+> build below is now historical. The plan is one unified memory behind a fixed-priority arbiter with
+> an I-cache alongside the existing `l1.v` D-cache, a UART hardware bootloader so programs reach the
+> board without a Quartus recompile, and CSRs + traps + **interrupts** to finish `RV32I46F_5SP`.
+> A hand-rolled SDRAM controller (`rtl/SRAM_controller.v`, ISSI `IS42S16320F`) is written but
+> unfinished. **~42 h asked against ~23 h before Monday evening** — the ordering call, and what gets
+> cut, is in [marathon § Sprint 2 cut line](marathon.md#sprint-2-cut-line--what-actually-lands-by-monday).
+> A DOOM capstone track is scoped at [marathon § Track K](marathon.md#track-k--doom-p2--the-capstone-stretch).
+>
+> **Revised the same evening:** Von Neumann demoted to stretch — `inst_mem.v` stays, no I-cache, no
+> arbiter. SDRAM drops straight into `data_mem.v`'s socket behind `l1.v`, and the bootloader splits
+> its writes (`.text` → M10K, `.data` → SDRAM). That cuts the ask from ~42 h to ~31.5 h against
+> ~22 h — still over, so traps and interrupts slip past Monday.
+>
 > **28 Aug — both memories are inside the core.** `inst_mem.v` and `data_mem.v` are written and
 > instantiated in `datapath.v`, so neither instruction fetch nor the cache's backing port crosses the
 > module boundary any more; only the io bus does. Fetch is a synchronous ROM re-timed against the PC

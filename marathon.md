@@ -11,6 +11,34 @@ supposed to happen on.
 > `fib_rec`, `factorial`, and everything the paper's final `RV32I46F_5SP` + SoC can do, up to and
 > including Dhrystone.
 
+**Sprint 2 — Sat 5 Sep 2026, 20:00 → Mon 7 Sep evening.** Scope settled on a second pass:
+
+- **SDRAM replaces `data_mem.v`** behind the existing `l1.v` D-cache. `SRAM_controller.v` was
+  written against the ISSI `IS42S16320F` datasheet and its cpu port is already a drop-in for
+  `data_mem`'s — seven of eight signals are a rename ([E12](#e12)).
+- **A UART bootloader that splits its writes**: `.text` → on-chip M10K, `.data`/`.rodata` → SDRAM
+  ([J6](#j6)). This is the mechanism `data_mem.v`'s own header comment says is missing.
+- **CSRs, traps and interrupts** ([Track D](#track-d--csrs-traps-interrupts-p1)) — paper parity.
+- **Harvard stays.** `inst_mem.v` is untouched, there is no I-cache and no arbiter;
+  [Track H](#track-h--von-neumann-unified-memory-i-cache-arbiter-p2) is demoted to stretch.
+
+**The honest arithmetic: ~22 h available against ~31.5 h.**
+
+| Block | Est | |
+|---|---|---|
+| [E8](#e8)–[E12](#e12) SDRAM: finish, verify, swap in, board | 13 h | `WRITE_BURST` is empty and DQ has no output enable — the write path has never run. |
+| [J1](#j1)–[J6](#j6) bootloader, both destinations | 5.5 h | Highest value per hour, but only on the board. |
+| [D1](#d1)–[D4](#d4) CSRs + traps | 7 h | Low variance, all sim, plumbing already in the pipeline registers. |
+| [D5](#d5)–[D6](#d6) interrupts | 6 h | `★★★ 🔥`. Cutting the I-cache means these no longer have to come first. |
+| **Total asked** | **~31.5 h** | against ~22 h (3 h tonight, ~10 h Sun, ~10 h Mon) |
+
+**Verdict: ~1.4× over — down from 1.8× before the restructure, still not a fit.** The memory work
+plus the bootloader plus CSRs fits; traps and interrupts slip to mid-week. Full reasoning and the
+hour-by-hour line in
+[Sprint 2 cut line](#sprint-2-cut-line--what-actually-lands-by-monday).
+
+---
+
 **Deadline was Sunday 30 Aug 2026. Today is Mon 31 Aug.** The core deliverable (Tracks A+B+C) is
 **green** — the pipeline executes GCC-compiled C programs self-checking against SIM_EXIT. What remains
 is post-deadline stretch work: FPGA bring-up (Track F), CSRs/traps/interrupts (Track D), measurement
@@ -90,6 +118,7 @@ Same convention as the roadmap, so the two documents read the same way.
 
 **Core deliverable complete.** Everything below is post-deadline stretch, ranked by
 independent value. Pull the next item off the top if you want to keep going.
+**Re-ranked 5 Sep** for Sprint 2 — see [the cut line](#sprint-2-cut-line--what-actually-lands-by-monday).
 
 | # | Task | | Est | Status |
 |---|---|---|---|---|
@@ -98,13 +127,18 @@ independent value. Pull the next item off the top if you want to keep going.
 | 3 | [Backing memory](#b1) + [`SIM_EXIT`](#b2) + [IO slave](#b3) | `★★☆ P0` | ~~4 h~~ | ✅ **All done 30 Aug.** APB bridge, UART, sim_exit built. |
 | 4 | [`crt0.S` + linker script](#c2) | `★★☆ P0` | ~~1.5 h~~ | ✅ **Done 30 Aug.** |
 | 5 | [`fib_iter.c` → `factorial.c` → `fib_rec.c`](#c3) | `★★☆ P0` | ~~2 h~~ | ✅ **Done 30 Aug.** `fib_iter`, `sum`, `fact_rec`, `uart` pass. |
-| 6 | [CSR file + Zicsr](#d1) | `★★☆ P1` | 2 h | Next — low risk, all simulation |
-| 7 | [Trap controller (exceptions)](#d3) | `★★★ P1 🔥` | 3 h | After D1 |
-| 8 | [Interrupts: CLINT + precise take point](#d5) | `★★★ P1 🔥` | 3 h | After D3 |
-| 9 | [Board bring-up: pins, PLL, on-chip boot](#f2) | `★★☆ P1` | 3 h | Alternative to Track D |
-| 10 | [UART TX + GPIO](#f5) | `★★☆ P1` | 2 h | After F2 |
-| 11 | [Avalon adapter for the cache block port](#e4) | `★★★ P1 🔥` | 4 h | After board or CSRs |
-| 12 | [Dhrystone](#g2) | `★★☆ P2` | 2 h | Needs D1 + E4 |
+| 6 | [Finish the SDRAM controller](#e8) | `★★★ P1 🔥` | 6 h | **Do first.** `WRITE_BURST` empty, DQ has no output enable, 12 logic bugs |
+| 7 | [Vendor SDRAM model](#e10) | `★★☆ P1` | 2 h | Read *and* write bursts. Not optional before the board |
+| 8 | [Swap into `data_mem`'s socket](#e12) | `★★☆ P1` | 1 h | Near-pure rename; one missing `data_in_valid` |
+| 9 | [Bootloader `.text` → M10K](#j1) | `★★☆ P1` | 3 h | No SDRAM dependency — can land standalone |
+| 10 | [Bootloader `.data` → SDRAM](#j6) | `★★☆ P1` | 2.5 h | Needs E8. Port mux + init wait + 32 B padding |
+| 11 | [SDRAM pins + PLL phase shift](#e11) | `★★☆ P1` | 4 h | Highest variance in the sprint |
+| 12 | [CSR file + Zicsr](#d1) | `★★☆ P1` | 3 h | Plumbing already in EX_MEM/MEM_WB/control |
+| 13 | [Trap controller (exceptions)](#d3) | `★★★ P1 🔥` | 4 h | Slips to Tuesday |
+| 14 | [Interrupts: CLINT + precise take point](#d5) | `★★★ P1 🔥` | 6 h | Slips to Wednesday. No longer blocked by [H2](#h2) |
+| 15 | [Von Neumann + I-cache + arbiter](#track-h--von-neumann-unified-memory-i-cache-arbiter-p2) | `★★★ P2` | 13 h | **Stretch.** Lifts the 32 KB `.text` ceiling |
+| 16 | [Dhrystone](#g2) | `★★☆ P2` | 2 h | Needs D1 + real DRAM |
+| 17 | [DOOM](#track-k--doom-p2--the-capstone-stretch) | `★★★ P2` | ~40 h | Needs E + H + J *finished*. [RV32M](#k1) is the gate |
 
 ---
 
@@ -423,7 +457,9 @@ self-check through SIM_EXIT. The C ladder has `fib_iter`, `sum`, `fact_rec`, and
 
 ---
 
-## Track D — CSRs, traps, interrupts (P1) — stretch, not started
+## Track D — CSRs, traps, interrupts (P1)
+
+*Not started. Sprint 2 target — see [the cut line](#sprint-2-cut-line--what-actually-lands-by-monday).*
 
 This is where you go past the paper. The paper has exceptions; interrupts in a pipelined core are
 strictly harder, because the trap arrives asynchronously and must still be *precise*. Low risk —
@@ -486,7 +522,9 @@ all simulation, golden model catches regressions.
 
 ---
 
-## Track E — the memory system: caches and external DRAM (P1) — stretch, not started
+## Track E — the memory system: caches and external DRAM (P1)
+
+*Partly started 5 Sep: `rtl/SRAM_controller.v` written, 12 logic bugs open, `WRITE_BURST` empty. See [E8](#e8).*
 
 <a name="e1"></a>
 - [ ] `★☆☆ P0` **⚠ `git tag` a known-good point before you touch memory.** The cache is a
@@ -536,12 +574,74 @@ all simulation, golden model catches regressions.
   initialise the DDR PHY, `f2sdram` bridge, address-map translation) before one word moves. Only
   with the SDRAM path already working and committed.
 
+<a name="e8"></a>
+- [ ] `★★★ P1 🔥` **Finish `rtl/SRAM_controller.v` — hand-rolled, not the Altera IP.** Written 5 Sep
+  against the ISSI `IS42S16320F` datasheet (`42-45R-S_86400F-16320F.pdf`): 8M × 16 × 4 banks, 13-bit
+  row, 10-bit column, full-page burst terminated by BST, CL=2. Reviewed 5 Sep — it compiles clean
+  under `iverilog` and the syntax is fixed, but **12 logic bugs are open** and three of them stop it
+  dead. In severity order:
+  1. **DQM tied high** — that is a mask, not an enable. Held high, DQ never leaves Hi-Z and every
+     write is suppressed. Tie both low.
+  2. **Read capture is two clocks early.** Registered command out + registered data in makes the
+     round trip **CL + 2**, not CL. Wait `counter == tCAS` from a counter that is actually reset on
+     entry to `READ_BURST` — it is not, today.
+  3. **Refresh only runs after a CPU transaction.** `refresh_pending` is consumed in `PRECHARGE`
+     only, so an idle core never refreshes and the array decays. `NORMAL_IDLE` has to service it.
+  4. Column address truncated (`cpu_u_c_addr_reg` is `[4:0]` against a 6-bit source, so A9 is stuck
+     at 0 and half of every row aliases), refresh interval drifts long, `REFRESH_PERIOD` should be
+     390 not 391, `mem_ready` re-asserts mid-transaction in `ACTIVATE`, no `tRAS`, `tMRD` in the
+     wrong units, burst-stop a cycle late.
+  5. `WRITE_BURST` is empty. Note when writing it that **write data has zero latency** — the first
+     word must be on DQ in the same cycle the WRITE command is latched — and that `tDPL` (10 ns)
+     must clear before the precharge.
+
+<a name="e9"></a>
+- [ ] `★★☆ P1` **⚠ DQ is bidirectional; the module has two unidirectional ports and no output
+  enable.** Either an `inout [15:0]` with the tri-state inside, or add a `mem_data_oe` and build
+  `assign DQ = oe ? d : 16'bz` in `RV32I.v`. There is currently no way to release the bus, so the
+  write path cannot work until this is decided. Decide it before writing `WRITE_BURST`, not after.
+
+<a name="e10"></a>
+- [ ] `★★☆ P1` **A vendor SDRAM model before the board.** Micron publishes a Verilog `mt48lc*` model
+  that checks every timing arc and `$display`s the violation with the parameter name. Bring the
+  controller up against that. Debugging a first SDRAM controller on real silicon, through a memory
+  that answers with plausible-looking garbage when the clock phase is wrong, is the single most
+  expensive way to find the DQM bug above.
+
+<a name="e11"></a>
+- [ ] `★★☆ P1` **SDRAM pins + the clock phase shift.** The `.qsf` has **5 pin assignments** — clk,
+  reset_n, uart_rx, uart_tx, io_slv_err. SDRAM needs ~40 more. Import them from the DE10-Standard
+  vendor `.qsf`; do not type them. One PLL, two outputs: the core/controller clock, and the same
+  clock **phase-shifted ~-3 ns** to the memory's CLK pin. That shift is a datasheet number.
+
+
+<a name="e12"></a>
+- [ ] `★★☆ P1` **Swap `SRAM_controller.v` into `data_mem.v`'s socket in `datapath.v`.** Seven of the
+  eight signals are a pure rename (table in [the cut line](#sprint-2-cut-line--what-actually-lands-by-monday)).
+  Three things to get right:
+  1. **The missing `data_in_valid`.** `data_mem.v` gates acceptance on
+     `addr_in_valid && (!write_read || data_in_valid)`; `SRAM_controller` looks at `cpu_in_valid`
+     alone. Today's master happens to raise both together — `l1.v`'s `M_PORT_FIFO_READ` sets
+     `mem_addr_in_valid` and `mem_data_out_valid` on the same edge — so it works by luck. Add
+     `cpu_data_in_valid` and replicate the `accept` term rather than relying on that.
+  2. **`mem_ready` is low for the whole ~100 µs init**, where `data_mem`'s is high out of reset.
+     This is a feature: the first load simply stalls until the SDRAM is ready, which gives you
+     "hold the core until init completes" for free. Confirm the hazard unit is happy stalling that
+     long rather than adding a separate gate.
+  3. **`mem_ready` now deasserts spontaneously** during a periodic refresh, not only in response to
+     a request. `l1.v` only ever reads it as `mem_addr_in_valid && mem_ready` at lines 313/323, so
+     it degrades to a wait — no change needed, but do not "optimise" that check later.
+
+
 ---
 
-## Track F — FPGA bring-up on the Cyclone V (P1) — stretch, not started
+## Track F — FPGA bring-up on the Cyclone V (P1)
 
-The `.qsf` currently has **no pin assignments at all** and the top level is a virtual-pin timing
-probe with ~1130 ports. Getting from that to a real design on a board is its own track.
+*Partly done: [F1](#f1) and [F2](#f2) landed — `RV32I.v` is a real SoC top with a reset synchroniser, fitted 1 Sep at 56 % ALMs / ~93 MHz with 5 real pins.*
+
+**Updated 5 Sep.** The virtual-pin probe is gone — `RV32I.v` is a real SoC top and the design fits
+with clk, reset_n, uart_rx, uart_tx and io_slv_err as actual pins. What is left of this track is the
+~40 SDRAM pins and the PLL ([E11](#e11)), GPIO, and the debug items below.
 
 <a name="f1"></a>
 - [ ] `★☆☆ P1` **⚠ A real SoC top level.** `RV32I.v` says it plainly in its own header comment: it
@@ -595,7 +695,9 @@ probe with ~1130 ports. Getting from that to a real design on a board is its own
 
 ---
 
-## Track G — parity and measurement (P2) — stretch, not started
+## Track G — parity and measurement (P2)
+
+*Not started.*
 
 <a name="g1"></a>
 - [ ] `★☆☆ P2` **Count instructions and cycles for CPI.** `minstret`/`mcycle` are already in
@@ -624,6 +726,196 @@ probe with ~1130 ports. Getting from that to a real design on a board is its own
 
 ---
 
+## Track H — Von Neumann: unified memory, I-cache, arbiter (P2)
+
+*New 5 Sep. **Demoted to stretch 5 Sep (second pass)** — `inst_mem.v` stays, no I-cache, no
+arbiter this sprint. Kept in full because it is the track that lifts the 32 KB `.text` ceiling
+([H2](#h2) is the gate) and because [Track K](#track-k--doom-p2--the-capstone-stretch) needs it.* The core is Harvard today: `inst_mem.v` is a synchronous ROM read one cycle ahead of the PC, and
+`data_mem.v` sits behind `l1.v`. Unifying them is not a wiring change — it changes what the fetch
+stage is allowed to assume.
+
+<a name="h1"></a>
+- [ ] `★★☆ P1` **One address map, one backing store.** Collapse `PROGRAM_FILE`/`DATA_FILE` into a
+  single image and a single linker script output, `.text`/`.rodata`/`.data`/`.bss` in one contiguous
+  region. `crt0.s` and `link.ld` change with it. Do this first and independently — the two-memory
+  build is what every existing cocotb test loads, so the test harness moves in the same commit or
+  nothing passes.
+
+<a name="h2"></a>
+- [ ] `★★★ P1 🔥` **Variable-latency instruction fetch.** This is the actual work in Track H, and it
+  is worth budgeting more than it looks. Today `imem_out_valid` is true one cycle after the address,
+  always, so IF never stalls on its own account — `datapath.v:102` even feeds it `if_pc_next`
+  directly. Behind a cache, fetch can stall for tens of cycles, which means:
+  - IF needs its own valid/ready handshake and a stall that is **independent** of `pc_stall`.
+  - A **PC redirect while a fetch is in flight** must be handled — a mispredict resolves in EX and
+    the fetch you launched two cycles ago is now garbage. Either tag fetches and discard the
+    response, or hold the redirect until the fetch retires. Tagging is correct; holding is simpler
+    and probably right for Monday.
+  - The IF/ID register must distinguish "no instruction yet" (bubble, keep the PC) from "instruction
+    is a NOP" (advance). `IF_ID_reg.v` already carries `instr_valid`; check it survives a multi-cycle
+    stall rather than latching once.
+
+<a name="h3"></a>
+- [ ] `★★☆ P1` **`rtl/icache.v` — a read-only derivative of `l1.v`.** Strictly simpler than the
+  D-cache: no dirty bits, no write-back FIFO, no sub-word access, no store path. Same block port
+  (`mem_addr_in`, `mem_data_in`, `mem_ready`, `mem_data_in_valid`) so it drops onto the arbiter
+  unchanged. Start direct-mapped, 64 sets × 32 B = 2 KB, and only go 2-way if the miss rate on the
+  C ladder justifies it. **Needs an invalidate port** for [J4](#j4).
+
+<a name="h4"></a>
+- [ ] `★☆☆ P1` **`rtl/mem_arbiter.v` — fixed priority, D over I.** One block-granular request in
+  flight at a time; no need for anything cleverer while the SDRAM controller can only service one
+  burst anyway. **Fixed priority is the right call, and D-before-I is the right order**: a data miss
+  is blocking an instruction that has already committed to executing, while an instruction miss is
+  refilling a stream that a mispredict may be about to discard. Round-robin buys nothing here and
+  costs you a starvation argument you'd have to make. Revisit only when the display DMA of
+  [K4](#k4) becomes a third master — *that* one has a real-time deadline and outranks both.
+
+<a name="h5"></a>
+- [ ] `★★☆ P1` **⚠ Regression must be bit-identical.** Same rule as [E1](#e1): the I-cache is a
+  correctness-neutral optimisation. `git tag` before H2 lands. All 9 assembly programs and the whole
+  C ladder pass unchanged, or the stall path is wrong — not the tests.
+
+<a name="h6"></a>
+- [ ] `★★☆ P1` **⚠ Fit risk: you are at 56 % ALMs and 7 % block RAM.** The 1 Sep fit is 23,331 /
+  41,910 ALMs with **40,553 registers** and only 405 K / 5.6 M block-memory bits used. That ratio
+  says `l1.v`'s tag/valid/PLRU arrays inferred into flops rather than M10K. Bolting a second cache
+  on top of that is how you fail the fitter rather than the simulator. Before H3 goes to hardware,
+  read the map report for `l1.v` and push the arrays into block RAM — there are 481 unused M10Ks.
+
+<a name="h7"></a>
+- [ ] `★☆☆ P2` **Self-modifying code and `FENCE.I`.** Once fetch and data share a memory, a store
+  can land in a line the I-cache holds. With no coherence, `FENCE.I` stops being a legal NOP
+  ([D7](#d7)) and has to actually invalidate. The bootloader is the first real instance of this
+  ([J4](#j4)) — note it in the README rather than discovering it as a hang.
+
+---
+
+## Track J — the UART hardware bootloader (P1)
+
+*New 5 Sep.* **The highest value-per-hour item in this document.** Every program change currently costs a Quartus
+recompile via the `.mif` loop in [F3](#f3). A bootloader replaces that with a serial write and a
+button press. Build it against **on-chip M10K first** — that version has no dependency on Track E
+and can be finished in an evening.
+
+<a name="j1"></a>
+- [ ] `★☆☆ P1` **Framing protocol.** Magic word, load address, byte count, payload, CRC or simple
+  checksum, then a one-byte ack. Keep it dumb enough to drive from `python3 -m serial`. `uart.v`
+  already has RX, so this is a state machine over a byte stream, not new IO.
+
+<a name="j2"></a>
+- [ ] `★★☆ P1` **`rtl/bootloader.v` + a write port on the memory.** An FSM that owns the memory
+  while `core_reset` is held, streams bytes in, and releases. Targeting M10K this is a second write
+  port on the inferred array (or an arbitrated single port — the core is in reset, so there is no
+  contention). Targeting SDRAM it becomes a third master on [H4](#h4) and needs
+  [E8](#e8)+[E9](#e9) finished first — which is exactly why the M10K version comes first.
+
+<a name="j3"></a>
+- [ ] `★☆☆ P1` **`tools/load.py`.** Reads the linked `.bin`, chunks it, waits for acks, prints a
+  progress bar. Fifteen minutes of Python that you will use several hundred times.
+
+<a name="j4"></a>
+- [ ] `★★☆ P1` **⚠ Release sequence — the part that bites.** Reset the core *after* the last byte
+  lands, and **invalidate the I-cache** ([H3](#h3)) as part of the release, or the first run after a
+  load executes whatever the previous program left in the cache lines. If the D-cache is write-back
+  and the bootloader wrote through the memory system rather than around it, the blocks must be
+  flushed to the backing store before release too. Simplest correct answer for Monday: hold reset
+  over the whole load and reset the caches with the core.
+
+<a name="j5"></a>
+- [ ] `★☆☆ P2` **Baud.** 115200 is fine for a 20 KB test program (~2 s). It is *not* fine for the
+  4.2 MB WAD in [K8](#k8) — that is 6.1 minutes at 115200 and 46 s at 921600. Make the divisor a
+  parameter now so raising it later is a re-fit and not a rewrite.
+
+<a name="j6"></a>
+- [ ] `★★☆ P1` **The `.data` → SDRAM path (revised scope, 5 Sep).** `.text` goes to M10K, everything
+  else to SDRAM, so the loader needs a **destination field in the protocol, not just an address** —
+  the two memories are separate address spaces in a Harvard machine and byte 0 is a legal address in
+  both. Then:
+  - **A 2:1 mux on `SRAM_controller`'s cpu port**, `l1.v` versus the bootloader, selected by
+    `boot_active`. ~30 min. Switch it only while the controller is in `NORMAL_IDLE`; the core is in
+    reset so there is no contention, but do not flip it mid-burst.
+  - **Wait for `mem_ready` before the first `.data` byte.** The init sequence is ~5000 cycles and
+    the controller ignores commands until it finishes. `reset_mem` — currently an unused port — is
+    the natural place to hang this.
+  - **Pad `.data` to a 32-byte boundary.** The controller only moves whole 256-bit blocks; a
+    trailing partial block needs the linker script to pad or the loader to zero-fill.
+
+---
+
+## Track K — DOOM (P2) — the capstone stretch
+
+*New 5 Sep.*
+
+Not a joke target and not a small one: **~40 h on top of everything above**, and it needs Tracks
+E, H and J *finished*, not merely started. It is listed here because it is a genuinely good forcing
+function — it turns "the memory system works" into a claim with a frame rate attached.
+
+**What DOOM actually demands.** It is fixed-point throughout, so no FPU and no RV32F — RV32I is
+enough on paper. What it is not is *small*: `doom1.wad` (shareware) is 4.2 MB, and `doomgeneric`
+wants roughly 8–16 MB of heap on top. That is comfortably inside the 64 MB on the board's SDRAM and
+completely impossible in M10K, so **Track E is not optional for this** the way it is for everything
+else in this document.
+
+<a name="k1"></a>
+- [ ] `★★★ P2` **RV32M — multiply and divide.** The single biggest performance item. `FixedMul` and
+  `FixedDiv` are DOOM's inner loop; without the M extension GCC emits calls to libgcc's `__mulsi3` /
+  `__divsi3`, which are tens of cycles each in software. You have **0 of 112 DSP blocks used** — a
+  32×32 multiplier is nearly free, and a radix-2 restoring divider is ~32 cycles of trivial logic.
+  Budget ~4 h, and expect it to matter more than any cache tuning. Est 4 h.
+
+<a name="k2"></a>
+- [ ] `★★★ P2` **SDRAM finished and fast.** All of [E8](#e8)–[E10](#e10), plus back-to-back bursts
+  without a full precharge/activate cycle between them (row-hit detection — keep the row open and
+  skip ACT when the next block is in the same row/bank). DOOM's working set thrashes; the difference
+  between "correct" and "correct with an open-row policy" is roughly 2× on memory-bound code.
+  Est 12 h.
+
+<a name="k3"></a>
+- [ ] `★★☆ P2` **VGA output.** The DE10-Standard has an ADV7123 triple 8-bit DAC on a 15-pin D-sub.
+  640×480 @ 60 Hz off a 25.175 MHz pixel clock from the PLL; DOOM renders 320×200 at 8 bpp, so
+  pixel-double to 640×400 and letterbox 40 lines. Palette is 256 × 24 bits — one M10K. Est 4 h.
+
+<a name="k4"></a>
+- [ ] `★★★ P2 🔥` **Display DMA and a real arbiter.** Scanout is a hard real-time master: 640×480×60
+  = 18.4 M pixels/s, and at 8 bpp that is ~18 MB/s of continuous reads that **cannot** be late. This
+  is the point where [H4](#h4)'s fixed priority is no longer adequate — the DMA needs a line FIFO,
+  a high-water-mark request, and priority over both CPU ports, with the CPU getting whatever
+  bandwidth is left in horizontal blanking. Get this wrong and the symptom is tearing or black
+  scanlines, not a crash. Est 5 h.
+
+<a name="k5"></a>
+- [ ] `★★☆ P2` **Newlib + a heap.** `sbrk` against a real heap in SDRAM, `malloc`, `memset`/`memcpy`
+  (the WAD loader leans on both), and enough `printf` to see the startup banner. `crt0.s` grows a
+  proper `.bss` clear over a much larger region. Est 4 h.
+
+<a name="k6"></a>
+- [ ] `★★★ P2` **`doomgeneric` port.** Five functions: `DG_Init`, `DG_DrawFrame`, `DG_SleepMs`,
+  `DG_GetTicksMs`, `DG_GetKey`. `DG_GetTicksMs` wants `mcycle` from [D1](#d1). The WAD is not on a
+  filesystem, so stub `I_ReadFile`/`fopen` against a fixed SDRAM address where [J2](#j2) parked it —
+  a read-only in-memory file shim is a couple of hundred lines and avoids ever writing an SD stack.
+  Est 8 h.
+
+<a name="k7"></a>
+- [ ] `★★☆ P2` **Input.** Cheapest first light is the host terminal: map UART RX bytes to
+  `DG_GetKey`, so WASD over the same serial link that loaded the program. Buttons and switches work
+  for a demo; PS/2 is the "proper" answer and costs an extra evening. Est 2 h.
+
+<a name="k8"></a>
+- [ ] `★★☆ P2` **Getting 4.2 MB onto the board.** [J5](#j5) at 921600 baud is 46 s and needs no new
+  hardware — do that first. SD over SPI is the better answer eventually and is its own afternoon.
+  Est 3 h.
+
+<a name="k9"></a>
+- [ ] `★☆☆ P2` **⚠ Set the frame-rate expectation before you start, not after.** A 486DX2-66 ran
+  DOOM at roughly 20–35 fps and is worth ~25 MIPS. This core at 50 MHz and CPI ~1.5 is ~33 MIPS
+  *nominal*, but every SDRAM miss is 20+ cycles and the fitter currently reports Fmax ~93 MHz at
+  56 % ALMs. Honest bracket: **low single-digit fps without [K1](#k1)**, and **~10–20 fps with**
+  RV32M, a working I-cache and an open-row SDRAM policy. If the number matters more than the demo,
+  K1 and K2 are where the hours go — not K3 or K6.
+
+---
+
 ## Definition of done
 
 **Core deliverable (A+B+C) — ✅ complete 30 Aug:**
@@ -647,6 +939,15 @@ probe with ~1130 ports. Getting from that to a real design on a board is its own
 - [ ] Timing closed at the chosen clock, with the fitter report read rather than assumed
 - [ ] `README.md` documents every deviation from the paper
 - [ ] Clean history, tagged at each milestone
+
+**Sprint 2 additions (5 Sep):**
+
+- [ ] A program is loaded over UART and runs, with no Quartus recompile in the loop
+- [ ] One memory: `.text` and `.data` in a single image, fetch and load/store through one arbiter
+- [ ] The full regression suite is **bit-identical** with the I-cache in and out
+- [ ] A timer interrupt is taken precisely while an I-cache miss is in flight
+- [ ] `SRAM_controller.v` passes against a vendor SDRAM model with zero timing violations
+- [ ] (K) DOOM boots to the title screen, with a measured frame rate written down
 
 ---
 
@@ -676,6 +977,108 @@ Everything else is adjectives.
 
 ---
 
+## Sprint 2 cut line — what actually lands by Monday
+
+> **Revised 5 Sep, second pass.** The first version of this section recommended J → D → H
+> (bootloader, then Track D, then start Von Neumann). **That recommendation is superseded.** The
+> revised scope below — Von Neumann demoted to stretch, no I-cache, `inst_mem` stays, SDRAM dropped
+> straight into `data_mem`'s socket, bootloader writing to *both* memories — is a better plan, and
+> it changes which track should be the spine. Reasoning kept in full below.
+
+**Revised scope, decided 5 Sep:**
+
+- [Track H](#track-h--von-neumann-unified-memory-i-cache-arbiter-p2) → **stretch.** No Von Neumann
+  unification, no I-cache, no arbiter this sprint. `inst_mem.v` stays as it is.
+- **SDRAM replaces `data_mem.v` behind `l1.v`.** Same block port, same socket.
+- **The bootloader splits its writes**: `.text` → on-chip M10K (`inst_mem`), `.data`/`.rodata` →
+  SDRAM.
+- Track D (CSRs, traps, interrupts) unchanged in content, moved behind the memory work.
+
+**Why this is the right restructure.** Three things it gets right:
+
+1. **It cuts the 13 h item with the worst variance and keeps the two with the best value.** Track H
+   was ~40 % of the backlog and the only item that touches the fetch stage, which every test
+   depends on.
+2. **`SRAM_controller.v`'s cpu port is already a drop-in for `data_mem.v`.** This is not a
+   coincidence and it is the part of an integration that normally costs a day:
+
+   | `data_mem.v` | `SRAM_controller.v` | |
+   |---|---|---|
+   | `mem_ready` | `mem_ready` | ✓ |
+   | `data_out_valid` | `data_out_valid` | ✓ |
+   | `data_out` | `data_out` | ✓ |
+   | `addr_in` | `cpu_addr_in` | ✓ rename |
+   | `addr_in_valid` | `cpu_in_valid` | ✓ rename |
+   | `data_in` | `cpu_data_in` | ✓ rename |
+   | `write_read` | `cpu_write_read` | ✓ rename |
+   | `data_in_valid` | — | **missing, see [E12](#e12)** |
+
+   Both sides register `ready` and both use the same req/ready retire rule, so the handshake
+   composes. Budget **1 h**, not a day.
+3. **It solves the problem `data_mem.v`'s own header comment describes.** That comment says
+   `.data`/`.rodata` "have to be loaded straight into this array" because the core has no data path
+   to instruction memory. A bootloader that writes both memories over UART is exactly the missing
+   mechanism — it replaces `$readmemb` on two files with a serial protocol, without needing von
+   Neumann to do it.
+
+**A consequence worth banking: cutting the I-cache un-blocks the Track D ordering.** The first
+version of this section argued D5 had to come *before* H2, because variable-latency fetch adds a
+second asynchronous stall source and interrupts must never be taken mid-stall. With H cut there is
+no second stall source — fetch from `inst_mem` still never stalls — so **interrupts can safely land
+after the memory work instead of before it.** That is what makes the reordering below legal.
+
+The counter-risk: SDRAM behind `l1.v` stretches the single remaining stall from ~10 cycles
+(`data_mem`'s 8-word burst) to **~35+** (ACT + CL + 16 beats + PRE, plus a possible refresh
+collision). D5 does not get harder to write, but it gets much harder to be sloppy in — a
+take-point bug that hid behind a 10-cycle stall will not hide behind a 35-cycle one.
+
+**The arithmetic: ~31.5 h against ~22 h.** Better than the 42 h it replaces, still ~1.4× over.
+
+| Item | Est |
+|---|---|
+| [E8](#e8) `WRITE_BURST` + [E9](#e9) DQ output-enable decision + the 3 blocking read bugs + 9 others | 6 h |
+| [E10](#e10) vendor model, read *and* write bursts verified | 2 h |
+| [E12](#e12) swap into `data_mem`'s socket | 1 h |
+| [E11](#e11) SDRAM pins + PLL phase shift + fit + first light | 4 h |
+| [J1](#j1)–[J3](#j3) `.text` → M10K write port, protocol, `load.py` | 3 h |
+| [J6](#j6) `.data` → SDRAM: 2:1 port mux + wait-for-init | 2 h |
+| [J4](#j4) release sequence | 0.5 h |
+| [D1](#d1)+[D2](#d2) CSR file + Zicsr | 3 h |
+| [D3](#d3)+[D4](#d4) trap controller + `trap.S` | 4 h |
+| [D5](#d5)+[D6](#d6) CLINT + precise take point + `irq.c` | 6 h |
+| **Total** | **31.5 h** |
+
+**Recommended Monday line — memory work as the spine, Track D slips (~21.5 h):**
+
+| | Block | Est | Running |
+|---|---|---|---|
+| Sat night | [E9](#e9) DQ decision, then [E8](#e8): `WRITE_BURST` + DQM + read capture + refresh-in-idle | 3 h | 3 h |
+| Sun AM | [E8](#e8) remaining 9 bugs; [E10](#e10) vendor model green on read *and* write | 5 h | 8 h |
+| Sun PM | [E12](#e12) swap for `data_mem`, full regression in sim; [J1](#j1)–[J3](#j3) `.text` bootloader | 4 h | 12 h |
+| Sun eve | [J6](#j6) `.data` → SDRAM, port mux, init wait; [J4](#j4) release | 2.5 h | 14.5 h |
+| Mon AM | [E11](#e11) pins + PLL phase shift + fit | 4 h | 18.5 h |
+| Mon PM | **First light**: load a pattern into SDRAM over UART, read it back, then the C ladder | 2 h | 20.5 h |
+| Mon eve | [D1](#d1)+[D2](#d2) CSR file + Zicsr | 3 h | 23.5 h |
+
+**Monday evening deliverable: a board that takes programs over UART into both memories, running out
+of real SDRAM.** Traps Tuesday, interrupts Wednesday. That is a demo; Track D is a claim. This
+sprint buys the demo.
+
+**If paper parity matters more than the board,** invert it: [E8](#e8)+[E10](#e10)+[E12](#e12)
+(9 h, SDRAM verified in simulation only) + all of Track D (13 h) = 22 h, and defer [E11](#e11)
+and the bootloader. The bootloader has near-zero value without the board, so these two orderings
+are genuinely exclusive — pick one deliberately rather than starting both.
+
+**"Almost done" is optimistic — read this before betting the sprint on it.** The *read* path is
+close: the state machine, the init sequence, the mode-register word and the burst-stop logic are
+all right in shape. The *write* path does not exist — `WRITE_BURST` is empty and there is no output
+enable on DQ, so the controller cannot release the bus and has never moved a byte in either
+direction. That matters more than it sounds, because writes are the **eviction path of a write-back
+cache**: with SDRAM behind `l1.v`, the first dirty-line eviction exercises code that has never run.
+Call it ~80 % of the read path and ~0 % of the write path, and budget [E8](#e8) at a full 6 h.
+
+---
+
 ## Time budget vs. reality
 
 **Updated 31 Aug — deadline passed, core deliverable complete.**
@@ -695,15 +1098,22 @@ Everything else is adjectives.
 the toolchain install was faster than budgeted; the C ladder compiled cleanly on the first try).
 The core deliverable — a 5-stage pipelined RV32I running GCC-compiled C — is finished.
 
-**Remaining stretch work (post-deadline, ~42 h total):**
+**Remaining stretch work — re-scoped 5 Sep (~105 h total, ~65 h excluding DOOM):**
 
 | Track | Est | What it buys |
 |---|---|---|
-| D — CSRs + traps + interrupts | 11 h | Paper parity (`RV32I46F_5SP`) + interrupts. Low variance, all sim. |
-| F — FPGA bring-up | 12 h | The board. Higher variance, but the thing a person can watch. |
-| E — external DRAM | 12 h | Real DRAM behind the L1. Needs F or can run standalone. |
-| G — measurement | 7 h | Dhrystone, CPI, cache numbers. Needs D1 + E4. |
+| J — UART bootloader | 5.5 h | Splits writes: `.text` → M10K, `.data` → SDRAM. Best value/hour, but only on the board. |
+| D — CSRs + traps + interrupts | 12.5 h | Paper parity (`RV32I46F_5SP`) + interrupts. Low variance, all sim. |
+| H — Von Neumann + I-cache + arbiter | 13 h | **Stretch as of 5 Sep.** Lifts the 32 KB `.text` ceiling; required by Track K. |
+| E — SDRAM controller + board | 13 h | **Sprint 2 spine.** Drops into `data_mem`'s socket ([E12](#e12)). 12 bugs open, `WRITE_BURST` empty. |
+| F — FPGA bring-up (remainder) | 6 h | Partly done — real SoC top and 5 pins fitted 1 Sep. GPIO, SignalTap, single-step left. |
+| G — measurement | 7 h | Dhrystone, CPI, cache numbers. Needs D1 + real DRAM. |
+| K — DOOM | ~40 h | The capstone. Needs E + H + J finished, and RV32M on top. |
 
-**Any one of D or F is a good next step.** D is lower risk (simulation only, golden model catches
-regressions); F produces something visible. Neither is required for the project to be called
-complete.
+**The two-day picture is in [Sprint 2 cut line](#sprint-2-cut-line--what-actually-lands-by-monday):
+~23 h available, ~42 h asked. J and D fit with H started; SDRAM does not fit under any ordering.**
+
+**Superseded 5 Sep (second pass).** The earlier argument here was that D must precede H, because
+H adds a second asynchronous stall source that makes [D5](#d5)'s precise interrupt take point
+materially harder. **H is now cut from the sprint entirely, which dissolves that constraint** —
+fetch still never stalls, so interrupts can land after the memory work. E is the spine and D slips.
