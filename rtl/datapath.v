@@ -29,7 +29,19 @@ module data_path
   output [DATA_WIDTH-1:0] exit_code, 
   //flagged by the bridge on a decode error or a slave error. nothing consumes
   //it yet -- the lsu has no error input and there is no trap path
-  output io_slv_err
+  output io_slv_err, 
+
+  input imem_we, 
+  input [DATA_WIDTH-1:0] imem_waddr, 
+  input [DATA_WIDTH-1:0] imem_wdata, 
+
+  input mem_ready, 
+  input mem_data_in_valid, 
+  input [BLOCK_BITS-1:0] mem_data_in, 
+  output mem_write_read, 
+  output [DATA_WIDTH-1:0] mem_addr_in, 
+  output mem_addr_in_valid, 
+  output [BLOCK_BITS-1:0] mem_data_out
 ); 
 
   //////////////////////////////////////////////////////////////
@@ -113,7 +125,10 @@ module data_path
     .clk(clk),
     .imem_addr(imem_araddr), 
     .imem_data(imem_data), 
-    .output_valid(imem_out_valid) 
+    .output_valid(imem_out_valid), 
+    .imem_we(imem_we), 
+    .imem_waddr(imem_waddr), 
+    .imem_wdata(imem_wdata) 
   );
 
   btb
@@ -468,13 +483,6 @@ module data_path
   wire [1:0] cpu_size; 
 
   //backing memory behind the data cache
-  wire mem_ready; 
-  wire mem_data_in_valid; 
-  wire [BLOCK_BITS-1:0] mem_data_in;  
-  wire mem_write_read; 
-  wire [DATA_WIDTH-1:0] mem_addr_in;  
-  wire mem_addr_in_valid; 
-  wire [BLOCK_BITS-1:0] mem_data_out;  
   wire mem_data_out_valid; 
 
   EX_MEM_reg
@@ -648,27 +656,6 @@ module data_path
     .mem_addr_in_valid(mem_addr_in_valid), 
     .mem_data_out(mem_data_out), 
     .mem_data_out_valid(mem_data_out_valid)
-  ); 
-
-  data_mem //simulate byte addressed memory
-  #(
-    .DATA_WIDTH(DATA_WIDTH), 
-    .BLOCK_BITS(BLOCK_BITS), //32 bytes or 8 words 
-    .D_MEM_DEPTH(DATA_MEM_DEPTH), 
-    .WORD_OFF_BITS($clog2(BLOCK_BITS/DATA_WIDTH))
-  )
-  D_MEM
-  (
-    .clk(clk),
-    .reset(reset), 
-    .mem_ready(mem_ready), 
-    .data_out_valid(mem_data_in_valid), 
-    .data_out(mem_data_in), 
-    .addr_in(mem_addr_in), 
-    .addr_in_valid(mem_addr_in_valid), 
-    .data_in(mem_data_out), 
-    .data_in_valid(mem_data_out_valid), 
-    .write_read(mem_write_read)
   ); 
 
   BE_logic

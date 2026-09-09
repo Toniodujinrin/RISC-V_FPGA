@@ -9,7 +9,10 @@ module inst_mem
   input clk, 
   input [DATA_WIDTH-1:0] imem_addr, 
   output reg [DATA_WIDTH-1:0] imem_data, 
-  output reg output_valid 
+  output reg output_valid, 
+  input imem_we, 
+  input [DATA_WIDTH-1:0] imem_waddr, 
+  input [DATA_WIDTH-1:0] imem_wdata
 ); 
 
   reg [DATA_WIDTH-1:0] mem [0:IMEM_DEPTH-1]; 
@@ -25,6 +28,7 @@ module inst_mem
 
   always@(posedge clk)
   begin 
+      if(imem_we) mem[imem_waddr[ADDR_WIDTH+1:2]] <= imem_wdata; 
       imem_data <= mem[trunc_addr]; 
       output_valid <= (imem_addr[DATA_WIDTH-1:2] < IMEM_DEPTH); 
   end

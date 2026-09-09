@@ -555,7 +555,7 @@ module uart_rx
 module tick_gen
 #(
   parameter 
-  MAX_TICK_RATE = 307200, 
+  MAX_TICK_RATE = CLOCK_SPEED/16'd38400, 
   CLOCK_SPEED = 50000000
 )
 (
