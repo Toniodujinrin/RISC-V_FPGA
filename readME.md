@@ -10,14 +10,14 @@ Most importantly, this processor runs **real C programs compiled with GCC**. C s
 
 _Terminal screenshot placeholder: C rock paper scissors game running on the processor over UART._
 
-## Architecture
-
-<!-- Add the architecture block diagram here. Suggested Markdown:
-![RV32I processor architecture](path/to/architecture-diagram.png)
--->
-
-_Block diagram placeholder: processor pipeline, memories, cache, and MMIO subsystem._
-
+<!-- ## Architecture -->
+<!---->
+<!-- <!-- Add the architecture block diagram here. Suggested Markdown: -->
+<!-- ![RV32I processor architecture](path/to/architecture-diagram.png) -->
+<!-- --> -->
+<!---->
+<!-- _Block diagram placeholder: processor pipeline, memories, cache, and MMIO subsystem._ -->
+<!---->
 The design includes:
 
 - A classic five-stage `IF-ID-EX-MEM-WB` pipeline

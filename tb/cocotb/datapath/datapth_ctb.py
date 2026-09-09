@@ -22,9 +22,7 @@ def parse_imm(text):
 
 
 def sig_int(handle):
-    """unsigned int view of a signal, None when it holds x/z. a vector comes back
-       as a LogicArray but a 1 bit signal comes back as a scalar Logic, and the
-       two share no accessor beyond int(), which is unsigned on both"""
+    """unsigned int view of a signal,"""
     try:
         return int(handle.value)
     except ValueError:
@@ -32,7 +30,6 @@ def sig_int(handle):
 
 
 def read_image(file_name):
-    """raw little endian image, i.e what objcopy -O binary produces"""
     with open(file_name, "rb") as file:
         image = file.read()
     #a trailing partial word can only come from a truncated image
@@ -41,10 +38,6 @@ def read_image(file_name):
 
 
 def write_mem_file(words, path):
-    """$readmemb format: one word of binary digits per line. inst_mem reads this
-       at time 0 and the array is overwritten by load_memories straight after, so
-       in simulation it only keeps iverilog from reporting a missing file. it is
-       the real init path for synthesis, which has no testbench to write the array"""
     with open(path, "w") as file:
         for word in words:
             file.write(f"{word:032b}\n")
@@ -59,10 +52,7 @@ def load_memories(dut, words, data_words=()):
     for i in range(depth):
         imem[i].value = words[i] if i < len(words) else 0
 
-    #.data and .rodata go straight into RAM at word 0. the core has no data path
-    #to imem, so crt0 cannot copy them out of the program image the way it would
-    #on a von Neumann machine. the cache comes up invalid, so the first load of
-    #each block misses and pulls the initialised copy through
+    #.data and .rodata go  into RAM at word 0. 
     dmem = dut.D_MEM.mem
     d_depth = len(dmem)
     assert len(data_words) <= d_depth, \
@@ -72,9 +62,7 @@ def load_memories(dut, words, data_words=()):
 
 
 def write_images(dut, words, data_words=()):
-    """both .mem files, padded to the full depth of their array: $readmemb warns
-       on a short file, and a word left over from the previous test would
-       otherwise survive wherever the current one does not reach"""
+    """both .mem files, padded to the full depth of their array: $readmemb"""
     depth = len(dut.IMEM.mem)
     write_mem_file(words + [0]*(depth - len(words)),
                    os.path.join(BUILD_DIR, "test.mem"))
@@ -259,8 +247,7 @@ class Golden_Model:
 
 
     def load_asm(self, file_name):
-        """every line kept here has to assemble to exactly one word, otherwise the
-           golden's instruction index stops matching the image fed to imem"""
+        """loads and assembly file into the python program. parses out comments and branch labels"""
         with open(file_name) as file:
             for raw in file:
                 line = raw.split("#")[0].strip()
@@ -422,9 +409,7 @@ class Golden_Model:
             if instr_rd_index:
                 r[instr_rd_index] = 0xFFFFFFFF & res
 
-            #capture register and pc state as of this instruction retiring. the
-            #pc recorded is the instruction's own, which is what the dut carries
-            #down to writeback
+            #capture register and pc state as of this instruction retiring. 
             reg_queue.put_nowait(r.copy())
             pc_queue.put_nowait(pc)
             self.retired += 1

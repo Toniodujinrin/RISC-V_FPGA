@@ -9,6 +9,7 @@
 #include <fstream> 
 #include <filesystem>
 #include <stdio.h>
+#include <sys/types.h>
 
 
 
@@ -38,6 +39,7 @@ class Programmer{
 
   std::string uart_dev; 
   std::string c_program;
+  std::ifstream program_file; 
   int uart_fd; 
   void rx(char* buffer);
   void tx(std::string msg); 

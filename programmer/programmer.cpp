@@ -3,14 +3,19 @@
 Programmer::Programmer(const std::string& uart_dev, const std::string& c_program):uart_dev{uart_dev}, c_program{c_program}, uart_fd{-1}
 {}; 
 
+Programmer::~Programmer(){
+  program_file.close(); 
+  close(uart_fd); 
+}
+
 void Programmer::setup(){
   uart_fd = open(uart_dev.c_str(),O_RDWR|O_NOCTTY|O_NDELAY);
   if(uart_fd < 0){
     throw std::runtime_error("[x] could not open uart device file"); 
   }
 
-  obj_file.open(c_program); 
-  if(!obj_file.is_open()){
+  program_file.open(c_program); 
+  if(!program_file.is_open()){
     throw std::runtime_error("[x] could not open object file"); 
   }
  
@@ -50,7 +55,7 @@ void Programmer::setup(){
 void Programmer::compile_files(){
   char command[512]; 
   sprintf(command,
-      "riscv64-unknown-elf-gcc -march=rv64imafdc -mabi=ilp32 -nostdlib -nostartfiles -ffreestanding -O2 -Wall -Wextra -T '%s' -I '%s' '%s' '%s' '%s' -o '%s' -lgcc",
+      "riscv64-unknown-elf-gcc -march=rv32i -mabi=ilp32 -nostdlib -nostartfiles -ffreestanding -O2 -Wall -Wextra -T '%s' -I '%s' '%s' '%s' '%s' -o '%s' -lgcc",
       LINK_SCRIPT,LIB_DIR, CRT0, c_program.c_str(), STRING_C,elf_file); 
   std::cout<<"[o] Compiling c program \n"; 
   if(std::system(command)!= 0){
@@ -78,9 +83,8 @@ int Programmer::send_record(uint8_t* record_buff, uint8_t record_n, uint8_t rcrd
 
   uint8_t header[7] = {rcrd_size, n_recs, dest_mem, start_addr_0, start_addr_1, start_addr_2, start_addr_3}; 
 
-  
-  size_t ret_val =  read(uart_fd,buffer,buffer_size);
-  if()
+  size_t ret_val =  write(uart_fd,header,7);
+  return ret_val; 
 }
 
 
